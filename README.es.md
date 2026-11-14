@@ -143,7 +143,7 @@ La versión vive en `VERSION`. Después de cambiarla:
 node scripts/sync-version.mjs
 ```
 
-El workflow de release compila Linux, Windows y Android, firma los artefactos del updater y la APK, genera `latest.json` con la entrada `android-aarch64` (URL, tamaño y SHA-256), `release-manifest.json` y `SHA256SUMS.txt`, y publica el release. Consulta [docs/VERSIONING.md](docs/VERSIONING.md) y [docs/RELEASE_SECRETS.md](docs/RELEASE_SECRETS.md).
+Publicar un release requiere subir un tag `vX.Y.Z` que coincida con `VERSION`; un push normal a `main` solo ejecuta CI. El workflow de release compila entonces Linux, Windows y Android, firma los artefactos del updater y la APK, genera `latest.json` con la entrada `android-aarch64` (URL, tamaño y SHA-256), `release-manifest.json` y `SHA256SUMS.txt`, y publica el release. Consulta [docs/VERSIONING.md](docs/VERSIONING.md) y [docs/RELEASE_SECRETS.md](docs/RELEASE_SECRETS.md).
 
 ## Verificación
 

@@ -2,14 +2,16 @@ name: Release
 
 on:
   push:
-    branches: [main]
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
+    tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag (for example v0.9.18)"
+        required: true
+        type: string
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 permissions:
@@ -30,6 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0
       - name: Verify version files
         run: |
@@ -39,16 +42,27 @@ jobs:
             git diff -- package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock snapcraft.yaml packaging/flatpak/com.bettertracker.desktop.metainfo.xml
             exit 1
           fi
-      - name: Read VERSION
+      - name: Read VERSION and verify tag
         id: ver
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
         run: |
           VER=$(tr -d '[:space:]' < VERSION)
           if ! [[ "$VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error::VERSION must be strict SemVer X.Y.Z, got '$VER'"
             exit 1
           fi
+          EXPECTED_TAG="v$VER"
+          if [[ -n "$REQUESTED_TAG" && "$REQUESTED_TAG" != "$EXPECTED_TAG" ]]; then
+            echo "::error::Requested tag '$REQUESTED_TAG' does not match VERSION ($EXPECTED_TAG)."
+            exit 1
+          fi
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "$EXPECTED_TAG" ]]; then
+            echo "::error::Pushed tag '$GITHUB_REF_NAME' does not match VERSION ($EXPECTED_TAG). Publish tags as 'v' + VERSION."
+            exit 1
+          fi
           echo "version=$VER" >> "$GITHUB_OUTPUT"
-          echo "tag=v$VER" >> "$GITHUB_OUTPUT"
+          echo "tag=$EXPECTED_TAG" >> "$GITHUB_OUTPUT"
 
   draft:
     needs: version
@@ -58,6 +72,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0
       - name: Create draft release
         env:
@@ -94,6 +109,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -214,6 +230,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -448,6 +465,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ inputs.tag || github.ref }}
       - name: Download release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

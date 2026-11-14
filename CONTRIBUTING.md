@@ -133,11 +133,20 @@ node scripts/sync-version.mjs
 
 Never edit those files by hand. CI fails if the copies are out of sync.
 
-Releases are cut by the maintainer from `main`. The [release workflow](.github/workflows/release.yml) verifies the version, builds Linux, Windows and Android artifacts, signs the updater files and the APK, and publishes a GitHub release.
+Releases are cut by the maintainer by pushing a tag of the form `vX.Y.Z` that matches [VERSION](VERSION). The [release workflow](.github/workflows/release.yml) verifies the version, builds Linux, Windows and Android artifacts, signs the updater files and the APK, and publishes a GitHub release.
 
-> **Warning:** pushing to `main` with a change that is not a Markdown file or under `docs/` triggers the release workflow, which also publishes the Snap to Snapcraft on the **stable** channel. Documentation-only changes are ignored by `paths-ignore`, but code changes are not. Do not push to `main` unless you intend to release.
+A normal push to `main` only runs CI; it does not publish anything. To release:
 
-Do not create release tags or publish releases from a pull request.
+1. Set `VERSION` to `X.Y.Z` and run `node scripts/sync-version.mjs`.
+2. Commit, push to `main`, and wait for CI.
+3. Create and push the matching tag:
+
+   ```bash
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
+   ```
+
+The workflow rejects a tag that does not match `VERSION`. Tag pushes also publish the Snap to Snapcraft on the **stable** channel. Do not create release tags from a pull request.
 
 ## Coding guidelines
 

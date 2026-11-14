@@ -26,8 +26,16 @@ git diff -- package.json package-lock.json src-tauri/tauri.conf.json \
 
 1. Actualiza `VERSION` y ejecuta `node scripts/sync-version.mjs`.
 2. Añade notas en `docs/releases/vX.Y.Z.md` (opcional; si no existe se usa un texto mínimo).
-3. Haz commit y push a `main`.
-4. El workflow `.github/workflows/release.yml`:
+3. Haz commit y push a `main`. Ese push solo ejecuta CI: no publica nada.
+4. Crea y sube el tag `vX.Y.Z` que coincida con `VERSION`:
+
+   ```bash
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
+   ```
+
+5. El workflow `.github/workflows/release.yml`, disparado por el tag:
+   - valida que el tag sea exactamente `v` + `VERSION`;
    - ejecuta CI;
    - crea un release draft con el tag exacto;
    - compila Linux y Windows;
@@ -40,7 +48,7 @@ git diff -- package.json package-lock.json src-tauri/tauri.conf.json \
    - genera `latest.json`, `release-manifest.json` y `SHA256SUMS.txt`;
    - publica el release.
 
-Los cambios que solo tocan `*.md` o `docs/**` no disparan el workflow por `paths-ignore`. Si quieres republicar sin cambiar código, usa `workflow_dispatch`.
+El workflow solo se dispara con tags `v*` o con `workflow_dispatch` (indicando un tag existente). Un push normal a `main` no publica nada. Si el tag empujado o solicitado no coincide con `VERSION`, el workflow falla antes de compilar.
 
 ## Artefactos por plataforma
 
