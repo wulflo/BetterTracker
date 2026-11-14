@@ -71,7 +71,7 @@ Es el manifiesto que lee el plugin updater. Se genera con `scripts/generate-upda
 El endpoint configurado es:
 
 ```text
-https://github.com/wulflo/better-tracker/releases/latest/download/latest.json
+https://github.com/wulflo/BetterTracker/releases/latest/download/latest.json
 ```
 
 El workflow exige las dos claves (`linux-x86_64`, `windows-x86_64`) antes de publicar. Si falta un build o una firma, el release queda en draft.

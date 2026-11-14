@@ -20,7 +20,7 @@ import type { Lang } from './i18n';
 import { tx } from './i18n';
 
 export const UPDATE_MANIFEST_URL =
-  'https://github.com/wulflo/better-tracker/releases/latest/download/latest.json';
+  'https://github.com/wulflo/BetterTracker/releases/latest/download/latest.json';
 export const ANDROID_UPDATE_PLATFORM_KEY = 'android-aarch64';
 export const DEB_UPDATE_PLATFORM_KEY = 'linux-deb-x86_64';
 export const RPM_UPDATE_PLATFORM_KEY = 'linux-rpm-x86_64';
@@ -307,7 +307,7 @@ function validateAsset(
       tx(lang, `La URL de ${label} no usa HTTPS.`, `The ${label} URL does not use HTTPS.`),
     );
   }
-  if (!rawAsset.url.startsWith('https://github.com/wulflo/better-tracker/releases/')) {
+  if (!rawAsset.url.startsWith('https://github.com/wulflo/BetterTracker/releases/')) {
     throw new Error(
       tx(
         lang,

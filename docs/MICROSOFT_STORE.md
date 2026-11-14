@@ -64,7 +64,7 @@ El workflow falla si el nombre está vacío o contiene espacios.
 2. Descarga el artifact `store-msix`.
 3. En Partner Center, crea un envío nuevo y sube el `.msix`.
 4. Usa `PRIVACY_POLICY.md` como política de privacidad pública:
-   `https://github.com/wulflo/better-tracker/blob/main/PRIVACY_POLICY.md`.
+   `https://github.com/wulflo/BetterTracker/blob/main/PRIVACY_POLICY.md`.
 5. Completa la ficha de la Store (capturas, categoría, idiomas) y envía a
    certificación.
 

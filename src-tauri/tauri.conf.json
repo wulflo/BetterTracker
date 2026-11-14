@@ -59,7 +59,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/wulflo/better-tracker/releases/latest/download/latest.json"
+        "https://github.com/wulflo/BetterTracker/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDAzNzg0OTE2MEI1MUVCNDYKUldSRzYxRUxGa2w0QTZmQnJLVkJ2M3RpMlRtN2hDUU1HbGZ5c2o2WDhnTVhBV2d6Y3NOeGdrMW8K"
     }

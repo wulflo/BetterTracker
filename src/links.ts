@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { isTauri } from './vault';
 
-export const REPOSITORY_URL = 'https://github.com/wulflo/better-tracker';
+export const REPOSITORY_URL = 'https://github.com/wulflo/BetterTracker';
 export const RELEASES_URL = `${REPOSITORY_URL}/releases`;
 export const PRIVACY_URL = `${REPOSITORY_URL}/blob/main/PRIVACY_POLICY.md`;
 

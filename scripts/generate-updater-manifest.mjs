@@ -18,7 +18,7 @@ const assetsDir = positional[0];
 const outPath = resolve(positional[1] || 'latest.json');
 const tag = positional[2] || `v${readFileSync(join(ROOT, 'VERSION'), 'utf8').trim()}`;
 const version = positional[3] || readFileSync(join(ROOT, 'VERSION'), 'utf8').trim();
-const repo = positional[4] || process.env.GITHUB_REPOSITORY || 'wulflo/better-tracker';
+const repo = positional[4] || process.env.GITHUB_REPOSITORY || 'wulflo/BetterTracker';
 
 if (!assetsDir) {
   console.error(

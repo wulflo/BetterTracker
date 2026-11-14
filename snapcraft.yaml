@@ -11,9 +11,9 @@ name: better-tracker
 base: core22
 version: '0.9.18'
 title: Better Fitness Tracker
-contact: https://github.com/wulflo/better-tracker/issues
-issues: https://github.com/wulflo/better-tracker/issues
-source-code: https://github.com/wulflo/better-tracker
+contact: https://github.com/wulflo/BetterTracker/issues
+issues: https://github.com/wulflo/BetterTracker/issues
+source-code: https://github.com/wulflo/BetterTracker
 summary: Entrenamiento, composición corporal y nutrición local-first
 description: |
   Better Fitness Tracker reúne entrenamiento, composición corporal, nutrición y carga
@@ -26,7 +26,7 @@ grade: stable
 confinement: strict
 compression: lzo
 license: MIT
-website: https://github.com/wulflo/better-tracker
+website: https://github.com/wulflo/BetterTracker
 icon: snap/gui/better-tracker.png
 
 apps:

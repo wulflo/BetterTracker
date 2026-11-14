@@ -78,7 +78,7 @@ repository with a new date.
 Questions about this policy or the app can be sent through the project
 repository:
 
-<https://github.com/wulflo/better-tracker>
+<https://github.com/wulflo/BetterTracker>
 
 ---
 
@@ -163,4 +163,4 @@ repositorio con una fecha nueva.
 Las preguntas sobre esta política o sobre la app se pueden enviar a través del
 repositorio del proyecto:
 
-<https://github.com/wulflo/better-tracker>
+<https://github.com/wulflo/BetterTracker>

@@ -17,9 +17,9 @@
     </p>
   </description>
   <launchable type="desktop-id">com.bettertracker.desktop.desktop</launchable>
-  <url type="homepage">https://github.com/wulflo/better-tracker</url>
-  <url type="bugtracker">https://github.com/wulflo/better-tracker/issues</url>
-  <url type="vcs-browser">https://github.com/wulflo/better-tracker</url>
+  <url type="homepage">https://github.com/wulflo/BetterTracker</url>
+  <url type="bugtracker">https://github.com/wulflo/BetterTracker/issues</url>
+  <url type="vcs-browser">https://github.com/wulflo/BetterTracker</url>
   <developer id="github.com.wulflo">
     <name>Alonso</name>
   </developer>

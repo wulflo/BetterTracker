@@ -13,8 +13,8 @@ use tauri::Emitter;
 use tauri::Manager;
 
 const UPDATE_MANIFEST_URL: &str =
-    "https://github.com/wulflo/better-tracker/releases/latest/download/latest.json";
-const RELEASE_PREFIX: &str = "https://github.com/wulflo/better-tracker/releases/";
+    "https://github.com/wulflo/BetterTracker/releases/latest/download/latest.json";
+const RELEASE_PREFIX: &str = "https://github.com/wulflo/BetterTracker/releases/";
 /// Clave pública minisign del updater, en el mismo formato que
 /// `plugins.updater.pubkey` de `tauri.conf.json` (base64 de `minisign.pub`).
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
@@ -56,7 +56,7 @@ fn update_client() -> Result<reqwest::Client, String> {
         .user_agent(concat!(
             "BetterTracker/",
             env!("CARGO_PKG_VERSION"),
-            " (+https://github.com/wulflo/better-tracker)"
+            " (+https://github.com/wulflo/BetterTracker)"
         ))
         .build()
         .map_err(|error| format!("No se pudo crear el cliente HTTP: {error}"))
@@ -701,7 +701,7 @@ pub fn open_external(app: AppHandle, url: String) -> Result<(), String> {
 }
 
 fn validate_external_url(value: &str) -> Result<(), String> {
-    const REPOSITORY: &str = "https://github.com/wulflo/better-tracker";
+    const REPOSITORY: &str = "https://github.com/wulflo/BetterTracker";
     let url = value.trim();
     if url.is_empty()
         || url
@@ -788,11 +788,11 @@ mod tests {
     #[test]
     fn accepts_only_official_release_urls() {
         assert!(validate_release_url(
-            "https://github.com/wulflo/better-tracker/releases/download/v0.9.5/app.apk"
+            "https://github.com/wulflo/BetterTracker/releases/download/v0.9.5/app.apk"
         )
         .is_ok());
         assert!(validate_release_url(
-            "https://github.com/wulflo/better-tracker/releases/latest/download/latest.json"
+            "https://github.com/wulflo/BetterTracker/releases/latest/download/latest.json"
         )
         .is_ok());
         assert!(validate_release_url(
@@ -800,11 +800,11 @@ mod tests {
         )
         .is_err());
         assert!(validate_release_url(
-            "http://github.com/wulflo/better-tracker/releases/download/v1/app.apk"
+            "http://github.com/wulflo/BetterTracker/releases/download/v1/app.apk"
         )
         .is_err());
         assert!(validate_release_url(
-            "https://github.com/wulflo/better-tracker.evil/releases/download/v1/app.apk"
+            "https://github.com/wulflo/BetterTracker.evil/releases/download/v1/app.apk"
         )
         .is_err());
     }
@@ -844,23 +844,23 @@ mod tests {
 
     #[test]
     fn allows_only_official_external_links() {
-        assert!(validate_external_url("https://github.com/wulflo/better-tracker").is_ok());
-        assert!(validate_external_url("https://github.com/wulflo/better-tracker/").is_ok());
+        assert!(validate_external_url("https://github.com/wulflo/BetterTracker").is_ok());
+        assert!(validate_external_url("https://github.com/wulflo/BetterTracker/").is_ok());
         assert!(validate_external_url(
-            "https://github.com/wulflo/better-tracker/releases"
+            "https://github.com/wulflo/BetterTracker/releases"
         )
         .is_ok());
         assert!(validate_external_url(
-            "https://github.com/wulflo/better-tracker/releases/tag/v0.9.9"
+            "https://github.com/wulflo/BetterTracker/releases/tag/v0.9.9"
         )
         .is_ok());
-        assert!(validate_external_url("https://github.com/wulflo/better-tracker.evil").is_err());
-        assert!(validate_external_url("https://github.com/wulflo/better-tracker/releases-evil")
+        assert!(validate_external_url("https://github.com/wulflo/BetterTracker.evil").is_err());
+        assert!(validate_external_url("https://github.com/wulflo/BetterTracker/releases-evil")
             .is_err());
         assert!(validate_external_url("https://github.com/evil/better-tracker").is_err());
-        assert!(validate_external_url("http://github.com/wulflo/better-tracker").is_err());
+        assert!(validate_external_url("http://github.com/wulflo/BetterTracker").is_err());
         assert!(validate_external_url("javascript:alert(1)").is_err());
-        assert!(validate_external_url("https://github.com/wulflo/better-tracker/../../evil")
+        assert!(validate_external_url("https://github.com/wulflo/BetterTracker/../../evil")
             .is_err());
     }
 

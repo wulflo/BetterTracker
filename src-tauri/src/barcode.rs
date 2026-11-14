@@ -28,7 +28,7 @@ pub async fn lookup_barcode(code: String) -> Result<Option<Value>, String> {
         .user_agent(concat!(
             "BetterTracker/",
             env!("CARGO_PKG_VERSION"),
-            " (+https://github.com/wulflo/better-tracker)"
+            " (+https://github.com/wulflo/BetterTracker)"
         ))
         .build()
         .map_err(|e| format!("No se pudo crear el cliente HTTP: {e}"))?;
