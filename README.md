@@ -1,10 +1,28 @@
 # Better Fitness Tracker
 
-Training, body composition, nutrition, and weekly load in a local-first desktop app.
+[![CI](https://github.com/wulflo/BetterTracker/actions/workflows/ci.yml/badge.svg)](https://github.com/wulflo/BetterTracker/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.9.18-informational.svg)](VERSION)
+[![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20Android-lightgrey.svg)](#platforms)
+
+Training, body composition, nutrition, and weekly load in a **local-first** desktop app.
+
+Everything you log stays in a folder you choose. No accounts, no cloud, no telemetry.
 
 Current version: **0.9.18**.
 
-[Leer en español](README.es.md)
+**Read this in:** **English** · [Español](README.es.md)
+
+## Contents
+
+- [Platforms](#platforms)
+- [Features](#features)
+- [Data and privacy](#data-and-privacy)
+- [Build](#build)
+- [Verification](#verification)
+- [Contributing](#contributing)
+- [Known limitations](#known-limitations)
+- [License and third-party notices](#license-and-third-party-notices)
 
 ## Platforms
 
@@ -26,7 +44,7 @@ On Linux the app uses GTK/WebKit and runs natively on Wayland. When the propriet
 
 ## Features
 
-- Full interface in Spanish and English, switchable in Settings and stored on the device. Food, recipe, body-zone and metric labels are translated too.
+The full interface is available in Spanish and English, switchable in Settings and stored on the device. Food, recipe, body-zone and metric labels are translated too.
 
 ### Panel
 
@@ -132,7 +150,17 @@ The release workflow builds Linux, Windows and Android, signs the updater artifa
 - `npm test` runs unit tests for metrics, food calculations, custom foods, and the daily meal draft.
 - `npx tsc --noEmit` checks TypeScript types.
 - `cargo test`, `cargo clippy`, and the CI workflow check Rust.
+- `cargo deny` and `cargo audit` run in CI to keep dependency licenses and known advisories in check.
 - The release workflow verifies each platform's artifacts and requires the updater signatures before publishing.
+
+The full list of checks is in [CONTRIBUTING.md](CONTRIBUTING.md#tests-and-continuous-integration).
+
+## Contributing
+
+Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup, the project's non-negotiable constraints, coding conventions, and the review process.
+
+Please report security vulnerabilities privately through GitHub's advisory form rather than in a public issue:
+**https://github.com/wulflo/BetterTracker/security/advisories/new**
 
 ## Known limitations
 
@@ -142,6 +170,11 @@ The release workflow builds Linux, Windows and Android, signs the updater artifa
 - Body-composition and training-load estimates are orientative, not medical diagnosis.
 - The bundled food database uses approximate values per 100 g/ml and is meant for estimation. It does not replace labels, official tables, or professional advice.
 
-## License
+## License and third-party notices
 
-MIT. See [LICENSE](LICENSE).
+The project is released under the **MIT** license. See [LICENSE](LICENSE).
+
+The bundled Open Food Facts-derived barcode catalog is distributed under the
+Open Database License (ODbL-1.0), and its contents under the Database Contents
+License (DbCL-1.0). Dependency licenses, the MPL-2.0 exceptions, and the full
+attribution notes are listed in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).

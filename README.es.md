@@ -1,10 +1,28 @@
 # Better Fitness Tracker
 
-Entrenamiento, composición corporal, nutrición y carga semanal en una app de escritorio local-first.
+[![CI](https://github.com/wulflo/BetterTracker/actions/workflows/ci.yml/badge.svg)](https://github.com/wulflo/BetterTracker/actions/workflows/ci.yml)
+[![Licencia: MIT](https://img.shields.io/badge/licencia-MIT-blue.svg)](LICENSE)
+[![Versión](https://img.shields.io/badge/versi%C3%B3n-0.9.18-informational.svg)](VERSION)
+[![Plataformas](https://img.shields.io/badge/plataformas-Linux%20%7C%20Windows%20%7C%20Android-lightgrey.svg)](#plataformas)
+
+Entrenamiento, composición corporal, nutrición y carga semanal en una app de escritorio **local-first**.
+
+Todo lo que registras se queda en una carpeta que tú eliges. Sin cuentas, sin nube y sin telemetría.
 
 Versión actual: **0.9.18**.
 
-[Read in English](README.md)
+**Leer en:** [English](README.md) · **Español**
+
+## Contenido
+
+- [Plataformas](#plataformas)
+- [Funciones](#funciones)
+- [Datos y privacidad](#datos-y-privacidad)
+- [Compilar](#compilar)
+- [Verificación](#verificación)
+- [Contribuir](#contribuir)
+- [Limitaciones conocidas](#limitaciones-conocidas)
+- [Licencia y avisos de terceros](#licencia-y-avisos-de-terceros)
 
 ## Plataformas
 
@@ -26,7 +44,7 @@ En Linux la app usa GTK/WebKit y funciona en Wayland de forma nativa. Cuando se 
 
 ## Funciones
 
-- Interfaz completa en español e inglés, con selector en Ajustes y preferencia guardada en el dispositivo. También se traducen alimentos, recetas, zonas corporales y métricas.
+La interfaz completa está disponible en español e inglés, con selector en Ajustes y preferencia guardada en el dispositivo. También se traducen alimentos, recetas, zonas corporales y métricas.
 
 ### Panel
 
@@ -132,7 +150,17 @@ El workflow de release compila Linux, Windows y Android, firma los artefactos de
 - `npm test` ejecuta las pruebas unitarias de métricas, alimentos, alimentos personalizados y borrador diario.
 - `npx tsc --noEmit` comprueba tipos.
 - `cargo test`, `cargo clippy` y el workflow de CI comprueban Rust.
+- `cargo deny` y `cargo audit` se ejecutan en CI para vigilar las licencias de dependencias y los avisos de seguridad conocidos.
 - El workflow de release verifica los artefactos de cada plataforma y exige las firmas del updater antes de publicar.
+
+La lista completa de comprobaciones está en [CONTRIBUTING.md](CONTRIBUTING.md#tests-and-continuous-integration).
+
+## Contribuir
+
+Las contribuciones son bienvenidas. Empieza por [CONTRIBUTING.md](CONTRIBUTING.md) para ver la puesta en marcha, las restricciones no negociables del proyecto, las convenciones de código y el proceso de revisión.
+
+Reporta las vulnerabilidades de seguridad en privado mediante el formulario de avisos de GitHub, no en una issue pública:
+**https://github.com/wulflo/BetterTracker/security/advisories/new**
 
 ## Limitaciones conocidas
 
@@ -142,6 +170,12 @@ El workflow de release compila Linux, Windows y Android, firma los artefactos de
 - Las estimaciones de composición y carga son orientativas, no diagnóstico médico.
 - La base de alimentos incluida usa valores aproximados por 100 g/ml y sirve para estimar; no sustituye etiquetas, tablas oficiales ni asesoramiento profesional.
 
-## Licencia
+## Licencia y avisos de terceros
 
-MIT. Consulta [LICENSE](LICENSE).
+El proyecto se publica bajo licencia **MIT**. Consulta [LICENSE](LICENSE).
+
+El catálogo de códigos de barras incluido, derivado de Open Food Facts, se
+distribuye bajo la Open Database License (ODbL-1.0), y sus contenidos bajo la
+Database Contents License (DbCL-1.0). Las licencias de las dependencias, las
+excepciones MPL-2.0 y la atribución completa están en
+[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
