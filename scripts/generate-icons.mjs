@@ -100,6 +100,16 @@ if (existsSync(androidDir)) {
 
 rmSync(tmpDir, { recursive: true, force: true });
 
+// 4. Assets de Microsoft Store: los cuatro logos del manifiesto y las variantes
+// `targetsize-*` del icono de la app. Se derivan de `icon.png` para que el tile
+// tenga fondo transparente y el logo ocupe todo el asset. Mantenerlos en este
+// paso garantiza que `npm run icons` y el workflow `store-msix` generen
+// exactamente los mismos bytes que están commiteados.
+execFileSync(process.execPath, [join(root, 'scripts', 'prepare-store-icons.mjs')], {
+  cwd: root,
+  stdio: 'inherit',
+});
+
 console.log(
   `generate-icons: ${desktop} iconos de escritorio, ${ios} de iOS, ${android} de Android.`,
 );
