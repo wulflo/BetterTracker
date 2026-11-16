@@ -32,9 +32,19 @@ jobs:
       - name: Verify app icons are up to date
         run: |
           npm run icons
-          # `icon.icns` cambia en cada generación (el CLI no es determinista ahí),
-          # así que solo se comparan los iconos reproducibles.
-          git diff --exit-code -- src-tauri/icons ':(exclude)src-tauri/icons/icon.icns'
+          # `icon.icns` cambia en cada generación (el CLI no es determinista ahí).
+          # Los assets de Store que escribe `prepare-store-icons.mjs` tienen
+          # píxeles reproducibles, pero sus bytes comprimidos dependen de la
+          # versión de zlib de Node y no coinciden entre el runner y un equipo
+          # local. El workflow `store-msix` los regenera antes de empaquetar,
+          # así que acá se comparan solo los iconos que produce el CLI de Tauri.
+          git diff --exit-code -- src-tauri/icons \
+            ':(exclude)src-tauri/icons/icon.icns' \
+            ':(exclude)src-tauri/icons/StoreLogo.png' \
+            ':(exclude)src-tauri/icons/Square44x44Logo.png' \
+            ':(exclude)src-tauri/icons/Square150x150Logo.png' \
+            ':(exclude)src-tauri/icons/Square310x310Logo.png' \
+            ':(exclude)src-tauri/icons/Square44x44Logo.targetsize-*'
       - name: Type check
         run: npx tsc --noEmit
       - name: Frontend tests
