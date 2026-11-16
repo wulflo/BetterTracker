@@ -2,14 +2,14 @@
 
 [![CI](https://github.com/wulflo/BetterTracker/actions/workflows/ci.yml/badge.svg)](https://github.com/wulflo/BetterTracker/actions/workflows/ci.yml)
 [![Licencia: MIT](https://img.shields.io/badge/licencia-MIT-blue.svg)](LICENSE)
-[![Versión](https://img.shields.io/badge/versi%C3%B3n-0.9.18-informational.svg)](VERSION)
+[![Versión](https://img.shields.io/badge/versi%C3%B3n-0.9.19-informational.svg)](VERSION)
 [![Plataformas](https://img.shields.io/badge/plataformas-Linux%20%7C%20Windows%20%7C%20Android-lightgrey.svg)](#plataformas)
 
 Entrenamiento, composición corporal, nutrición y carga semanal en una app de escritorio **local-first**.
 
 Todo lo que registras se queda en una carpeta que tú eliges. Sin cuentas, sin nube y sin telemetría.
 
-Versión actual: **0.9.18**.
+Versión actual: **0.9.19**.
 
 **Leer en:** [English](README.md) · **Español**
 

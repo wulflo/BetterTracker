@@ -80,22 +80,50 @@ jobs:
           # GitHub usa el último $LASTEXITCODE como resultado del paso.
           exit 0
 
+      - name: Prepare Store icons
+        run: node scripts/prepare-store-icons.mjs
+
       - name: Stage MSIX payload
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           New-Item -ItemType Directory -Force -Path store-msix\Assets | Out-Null
           Copy-Item src-tauri\target\release\better-tracker.exe store-msix\better-tracker.exe
-          foreach ($asset in @("StoreLogo.png", "Square44x44Logo.png", "Square150x150Logo.png", "Square310x310Logo.png")) {
-            $source = "src-tauri\icons\$asset"
-            if (-not (Test-Path $source)) {
-              throw "Falta el icono $source. Ejecutá 'npm run icons' y commiteá el resultado."
-            }
-            Copy-Item $source "store-msix\Assets\$asset"
+          $assets = Get-ChildItem src-tauri\icons\*.png | Where-Object { $_.Name -in @("StoreLogo.png","Square44x44Logo.png","Square150x150Logo.png","Square310x310Logo.png") -or $_.Name -like "Square44x44Logo.targetsize-*" }
+          if (-not $assets) {
+            throw "No hay iconos en src-tauri\icons. Ejecutá 'node scripts/prepare-store-icons.mjs' y commiteá el resultado."
           }
+          $assets | Copy-Item -Destination store-msix\Assets
 
       - name: Generate AppxManifest.xml
         run: node scripts/prepare-store-msix.mjs
+
+      - name: Generate resources.pri
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          # Windows sólo usa las variantes unplated de Square44x44Logo si están
+          # indexadas en resources.pri. Sin este índice el icono de la barra de
+          # tareas y de Start se dibuja con bandeja de fondo y más chico.
+          $makepri = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\makepri.exe" |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if (-not $makepri) {
+            throw "No se encontró makepri.exe. Instalá el Windows SDK en el runner."
+          }
+
+          $priconfig = Join-Path $env:RUNNER_TEMP "priconfig.xml"
+          & $makepri.FullName createconfig /cf $priconfig /dq lang-en-US /o /pv 10.0.0
+          if ($LASTEXITCODE -ne 0) { throw "makepri createconfig falló con código $LASTEXITCODE" }
+          & $makepri.FullName new /cf $priconfig /pr store-msix /o /of store-msix\resources.pri
+          if ($LASTEXITCODE -ne 0) { throw "makepri new falló con código $LASTEXITCODE" }
+
+          & $makepri.FullName dump /if store-msix\resources.pri /of store-msix\resources.pri.xml /o
+          if ($LASTEXITCODE -ne 0) { throw "makepri dump falló con código $LASTEXITCODE" }
+          if (-not (Select-String -Path store-msix\resources.pri.xml -Pattern 'targetsize-32_altform-unplated' -Quiet)) {
+            throw "resources.pri no indexó las variantes unplated del icono."
+          }
+          Remove-Item store-msix\resources.pri.xml
 
       - name: Pack MSIX
         shell: pwsh

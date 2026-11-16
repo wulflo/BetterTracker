@@ -37,7 +37,7 @@
       <uap:VisualElements
         DisplayName="__DISPLAY_NAME__"
         Description="Local-first training, body composition, and nutrition tracker"
-        BackgroundColor="#0A0C12"
+        BackgroundColor="transparent"
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png" />
     </Application>
