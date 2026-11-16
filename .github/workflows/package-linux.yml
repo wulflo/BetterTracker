@@ -189,6 +189,20 @@ jobs:
       - name: Restore executable permissions
         run: chmod +x packaging/linux/deb-root/usr/bin/better-tracker
 
+      # La imagen trae los runtimes en capas de solo lectura y overlayfs
+      # rechaza los renombrados de directorio que hace flatpak al
+      # actualizarlos ("Invalid cross-device link"); el fallo acaba en un
+      # SIGSEGV de flatpak-builder. Copiarlos a la capa escribible del
+      # contenedor los hace actualizables.
+      # https://github.com/flatpak/flatpak-github-actions/issues/267
+      - name: Make the preinstalled runtimes updatable
+        run: |
+          for dir in $(flatpak --installations); do
+            cp -a "$dir" "$dir.copy"
+            rm -rf "$dir"
+            mv "$dir.copy" "$dir"
+          done
+
       - name: Build Flatpak bundle
         uses: flatpak/flatpak-github-actions/flatpak-builder@79327416609af08178ad73b352877e51450790b3 # v6
         with:
