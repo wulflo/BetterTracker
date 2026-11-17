@@ -1,0 +1,495 @@
+import { describe, expect, it } from 'vitest';
+import {
+  averageIntakeFromEvents,
+  bodyComposition,
+  bodyProgressSeries,
+  averageStepsFromEvents,
+  computeMacros,
+  computeSatiety,
+  computeWaterGuidance,
+  daysBetween,
+  estimateTraining,
+  goalModeFromEvents,
+  formatProjectionDate,
+  latestMeasurement,
+  latestNutrition,
+  loggedIntakeAverage,
+  reduceExercises,
+  reduceNutrition,
+  reducePRs,
+  reduceRoutines,
+  reduceSessions,
+  reduceWorkouts,
+  safeNum,
+  startOfWeek,
+  stepActivityMultiplier,
+  todayISO,
+  trainingFrequencyFromEvents,
+  trainingSummary,
+  visibleTrainingEvents,
+} from './metrics';
+import type { BodyMeasures, Exercise, VaultEvent } from './types';
+
+const BODY: BodyMeasures = {
+  sex: 'male',
+  age: 30,
+  weight: 80,
+  height: 180,
+  neck: 38,
+  chest: 102,
+  waist: 85,
+  abdomen: 88,
+  hip: 96,
+  arm: 33,
+  forearm: 26,
+  thigh: 56,
+  calf: 38,
+  wrist: 17,
+};
+
+function event(kind: string, payload: Record<string, unknown>, timestamp = '2026-01-01T00:00:00.000Z'): VaultEvent {
+  return {
+    id: `${kind}-${timestamp}`,
+    device_id: 'test',
+    timestamp,
+    kind,
+    payload,
+  };
+}
+
+describe('metrics', () => {
+  it('parses localized decimal input safely', () => {
+    expect(safeNum('12,5')).toBe(12.5);
+    expect(safeNum(' 8 ')).toBe(8);
+    expect(safeNum('no-numero')).toBe(0);
+  });
+
+  it('computes calendar differences and Monday-based weeks', () => {
+    expect(daysBetween('2026-01-01', '2026-01-31')).toBe(30);
+    expect(todayISO(startOfWeek(new Date(2026, 9, 28)))).toBe('2026-10-26');
+  });
+
+  it('uses the declared activity level exactly once', () => {
+    const base = computeMacros(BODY, 30, 'maintain');
+    const auto = computeMacros(BODY, 30, 'maintain', 'auto');
+    const moderate = computeMacros(BODY, 30, 'maintain', 'moderate');
+    const high = computeMacros(BODY, 30, 'maintain', 'high');
+    expect(base).not.toBeNull();
+    expect(auto).not.toBeNull();
+    expect(moderate).not.toBeNull();
+    expect(high).not.toBeNull();
+    expect(auto!.activity).toBe(base!.activity);
+    expect(auto!.tdee).toBe(base!.tdee);
+    expect(moderate!.activity).toBeCloseTo(1.55, 2);
+    expect(moderate!.tdee).toBeGreaterThan(base!.tdee);
+    expect(high!.tdee).toBeGreaterThan(moderate!.tdee);
+  });
+
+  it('applies the selected goal as a calorie deficit or surplus', () => {
+    const maintain = computeMacros(BODY, 180, 'maintain', 'moderate')!;
+    const cut = computeMacros(BODY, 180, 'cut', 'moderate')!;
+    const bulk = computeMacros(BODY, 180, 'bulk', 'moderate')!;
+    expect(maintain.kcal).toBe(maintain.tdee);
+    expect(cut.kcal).toBeLessThan(cut.tdee);
+    expect(bulk.kcal).toBeGreaterThan(bulk.tdee);
+  });
+
+  it('uses average daily steps as an activity floor without double counting', () => {
+    const sedentary = computeMacros(BODY, 0, 'maintain', 'sedentary', 'es', 0)!;
+    const walker = computeMacros(BODY, 0, 'maintain', 'sedentary', 'es', 12000)!;
+    const high = computeMacros(BODY, 0, 'maintain', 'high', 'es', 3000)!;
+
+    expect(sedentary.activity).toBeCloseTo(1.2, 2);
+    expect(stepActivityMultiplier(12000)).toBeCloseTo(1.6, 2);
+    expect(walker.activity).toBeCloseTo(1.6, 2);
+    expect(walker.tdee).toBeGreaterThan(sedentary.tdee);
+    expect(high.activity).toBeCloseTo(1.725, 2);
+  });
+
+  it('reads the latest stored average step count', () => {
+    const events = [
+      event('steps.average', { steps: 6000 }, '2026-01-01T00:00:00.000Z'),
+      event('steps.average', { steps: 9800 }, '2026-01-05T00:00:00.000Z'),
+    ];
+    expect(averageStepsFromEvents(events)).toBe(9800);
+    expect(averageStepsFromEvents([])).toBe(0);
+  });
+
+  it('counts strength sessions in the last 30 days', () => {
+    const exercises = [
+      event('exercise.upsert', { id: 'sq', name: 'Sentadilla', type: 'fuerza' }),
+      event('exercise.upsert', { id: 'run', name: 'Correr', type: 'cardio' }),
+    ];
+    const training = [
+      event('session.saved', {
+        id: 's1',
+        date: '2026-01-10',
+        duration: 3600,
+        entries: [{ exerciseId: 'sq', sets: [{ reps: 5, weight: 100 }] }],
+      }),
+      event('session.saved', {
+        id: 's2',
+        date: '2026-01-15',
+        duration: 1800,
+        entries: [{ exerciseId: 'run', sets: [] }],
+      }),
+      event('session.saved', {
+        id: 's3',
+        date: '2026-01-20',
+        duration: 3600,
+        entries: [{ exerciseId: 'sq', sets: [{ reps: 5, weight: 105 }] }],
+      }),
+      event('session.saved', {
+        id: 'old',
+        date: '2025-11-01',
+        duration: 3600,
+        entries: [{ exerciseId: 'sq', sets: [{ reps: 5, weight: 90 }] }],
+      }),
+    ];
+    const summary = trainingSummary([...exercises, ...training], reduceExercises(exercises), new Date(2026, 0, 25));
+    expect(summary.monthSessions).toBe(3);
+    expect(summary.monthStrengthSessions).toBe(2);
+    expect(summary.strengthPerMonth).toBe(2);
+  });
+
+  it('stores training frequency normalized and reads the last manual intake', () => {
+    const events = [
+      event('training.frequency', { perWeek: 3, unit: 'week' }, '2026-01-01T00:00:00.000Z'),
+      event('training.frequency', { perWeek: 5.7, unit: 'month' }, '2026-01-02T00:00:00.000Z'),
+      event('intake.average', { kcal: 2100 }, '2026-01-01T00:00:00.000Z'),
+      event('intake.average', { kcal: 1850 }, '2026-01-02T00:00:00.000Z'),
+    ];
+    expect(trainingFrequencyFromEvents(events)).toEqual({ perWeek: 5.7, unit: 'month' });
+    expect(trainingFrequencyFromEvents([])).toBeNull();
+    expect(averageIntakeFromEvents(events)).toBe(1850);
+    expect(averageIntakeFromEvents([])).toBe(0);
+    // Se limita a un rango razonable aunque llegue un valor corrupto.
+    expect(averageIntakeFromEvents([event('intake.average', { kcal: 99999 })])).toBe(10000);
+  });
+
+  it('averages only recent logged days for intake', () => {
+    const now = new Date(2026, 0, 25);
+    const events = [
+      event('nutrition.logged', { date: '2026-01-20', kcal: 2100 }, '2026-01-20T08:00:00.000Z'),
+      event('nutrition.logged', { date: '2026-01-24', kcal: 1900 }, '2026-01-24T08:00:00.000Z'),
+      // Vale la última entrada del mismo día.
+      event('nutrition.logged', { date: '2026-01-24', kcal: 1800 }, '2026-01-24T20:00:00.000Z'),
+      event('nutrition.logged', { date: '2025-12-01', kcal: 3000 }, '2025-12-01T08:00:00.000Z'),
+    ];
+    expect(loggedIntakeAverage(events, 28, now)).toEqual({ avg: 1950, days: 2 });
+    expect(loggedIntakeAverage([], 28, now)).toEqual({ avg: 0, days: 0 });
+  });
+
+  it('keeps declared frequency from underestimating a partially logged week', () => {
+    const exercises = [
+      event('exercise.upsert', { id: 'sq', name: 'Sentadilla', type: 'fuerza' }),
+    ];
+    const sessions = [
+      event(
+        'session.saved',
+        {
+          id: 's1',
+          date: '2026-01-24',
+          duration: 3600,
+          entries: [{ exerciseId: 'sq', sets: [{ reps: 5, weight: 100 }] }],
+        },
+        '2026-01-24T10:00:00.000Z',
+      ),
+    ];
+    const summary = trainingSummary(
+      [...exercises, ...sessions],
+      reduceExercises(exercises),
+      new Date(2026, 0, 25),
+    );
+
+    // Solo 1 sesión registrada en 30 días: no debe parecer que entrena 1 vez/mes.
+    const loggedOnly = estimateTraining(summary, null);
+    expect(loggedOnly.effectivePerWeek).toBe(0.2);
+    expect(loggedOnly.avgSessionMinutes).toBe(60);
+    expect(loggedOnly.source).toBe('logged');
+
+    const declared = estimateTraining(summary, 5);
+    expect(declared.effectivePerWeek).toBe(5);
+    expect(declared.weeklyMinutes).toBe(300);
+    expect(declared.source).toBe('declared');
+    expect(declared.assumedStrength).toBe(false);
+
+    // Si entrena más de lo que declara, manda lo registrado.
+    const moreLogged = estimateTraining(summary, 0);
+    expect(moreLogged.effectivePerWeek).toBe(0.2);
+    expect(moreLogged.source).toBe('logged');
+  });
+
+  it('assumes declared sessions are strength work when nothing is logged', () => {
+    const summary = trainingSummary([], [], new Date(2026, 0, 25));
+    const estimate = estimateTraining(summary, 4);
+    expect(estimate.avgSessionMinutes).toBe(45);
+    expect(estimate.weeklyMinutes).toBe(180);
+    expect(estimate.source).toBe('declared');
+    expect(estimate.assumedStrength).toBe(true);
+    expect(estimate.strengthPerMonth).toBeCloseTo(17.1, 1);
+
+    const none = estimateTraining(summary, null);
+    expect(none.weeklyMinutes).toBe(0);
+    expect(none.source).toBe('none');
+    expect(none.assumedStrength).toBe(false);
+  });
+
+  it('hides individually deleted workouts and personal records', () => {
+    const events = [
+      event(
+        'session.saved',
+        { id: 's1', date: '2026-01-10', duration: 3600, entries: [] },
+        '2026-01-10T10:00:00.000Z',
+      ),
+      event(
+        'workout.saved',
+        { id: 'w1', date: '2026-01-11', name: 'W', entries: [] },
+        '2026-01-11T10:00:00.000Z',
+      ),
+      event(
+        'pr.achieved',
+        { id: 'p1', date: '2026-01-12', exerciseId: 'x', weight: 100, reps: 3, name: 'x' },
+        '2026-01-12T10:00:00.000Z',
+      ),
+      event(
+        'training.deleted',
+        { eventId: 'session.saved-2026-01-10T10:00:00.000Z', kind: 'session' },
+        '2026-01-13T10:00:00.000Z',
+      ),
+      event(
+        'training.deleted',
+        { payloadId: 'w1', kind: 'workout' },
+        '2026-01-14T10:00:00.000Z',
+      ),
+    ];
+
+    expect(reduceSessions(events)).toHaveLength(0);
+    expect(reduceWorkouts(events)).toHaveLength(0);
+    expect(reducePRs(events)).toHaveLength(1);
+  });
+
+
+  it('applies exercise upserts and deletes deterministically', () => {
+    const exercises = reduceExercises([
+      event('exercise.upsert', { id: 'a', name: 'Sentadilla' } as unknown as Record<string, unknown>),
+      event('exercise.upsert', { id: 'b', name: 'Press' } as unknown as Record<string, unknown>, '2026-01-02T00:00:00.000Z'),
+      event('exercise.upsert', { id: 'a', name: 'Sentadilla frontal' } as unknown as Record<string, unknown>, '2026-01-03T00:00:00.000Z'),
+      event('exercise.delete', { id: 'b' }, '2026-01-04T00:00:00.000Z'),
+    ]);
+    expect(exercises.map((e: Exercise) => [e.id, e.name])).toEqual([['a', 'Sentadilla frontal']]);
+  });
+
+  it('keeps the latest version of each routine when editing', () => {
+    const routines = reduceRoutines([
+      event('routine.saved', { id: 'r1', name: 'Torso', exercises: [{ exerciseId: 'a', sets: 3, reps: 10, load: 0, rest: 90 }] }),
+      event('routine.saved', { id: 'r2', name: 'Pierna', exercises: [{ exerciseId: 'b', sets: 4, reps: 8, load: 0, rest: 120 }] }, '2026-01-02T00:00:00.000Z'),
+      event('routine.saved', { id: 'r1', name: 'Torso actualizado', exercises: [{ exerciseId: 'a', sets: 4, reps: 8, load: 0, rest: 90 }] }, '2026-01-03T00:00:00.000Z'),
+      event('routine.deleted', { id: 'r2' }, '2026-01-04T00:00:00.000Z'),
+    ]);
+    expect(routines).toHaveLength(1);
+    expect(routines[0]).toMatchObject({ id: 'r1', name: 'Torso actualizado' });
+    expect(routines[0].exercises[0]).toMatchObject({ sets: 4, reps: 8 });
+  });
+
+  it('hides only training events before the last history cutoff', () => {
+    const events = [
+      event('session.saved', { id: 'old' }, '2025-12-01T00:00:00.000Z'),
+      event('weight.logged', { id: 'w', date: '2025-12-01' }, '2025-12-01T00:00:00.000Z'),
+      event('history.cleared', { at: '2026-01-01T00:00:00.000Z' }, '2026-01-01T00:00:00.000Z'),
+      event('session.saved', { id: 'new' }, '2026-01-02T00:00:00.000Z'),
+    ];
+    const visible = visibleTrainingEvents(events);
+    expect(visible.map((e) => e.kind)).toEqual(['weight.logged', 'history.cleared', 'session.saved']);
+  });
+
+  it('keeps only the latest nutrition log per day', () => {
+    const events = [
+      event('nutrition.logged', { date: '2026-01-01', kcal: 2000, protein: 120, carbs: 220, fat: 60, fiber: 25, water: 2000 }),
+      event('nutrition.logged', { date: '2026-01-01', kcal: 2200, protein: 140, carbs: 240, fat: 65, fiber: 30, water: 2500 }, '2026-01-01T12:00:00.000Z'),
+      event('nutrition.logged', { date: '2026-01-02', kcal: 2100, protein: 130, carbs: 230, fat: 62, fiber: 28, water: 2200 }, '2026-01-02T08:00:00.000Z'),
+    ];
+    expect(reduceNutrition(events)).toHaveLength(3);
+    expect(latestNutrition(events, '2026-01-01')?.kcal).toBe(2200);
+    expect(latestNutrition(events, '2026-01-02')?.protein).toBe(130);
+  });
+
+  it('builds a fat-progress series without requiring a scale', () => {
+    const events = [
+      event('measurement.saved', {
+        date: '2026-01-01', sex: 'male', age: 35, height: 180, weight: 90,
+        neck: 40, waist: 100, hip: 100, chest: 105, arm: 35, thigh: 60, calf: 39, wrist: 17,
+      }),
+      event('measurement.saved', {
+        date: '2026-02-01', sex: 'male', age: 35, height: 180, weight: 86,
+        neck: 39, waist: 94, hip: 98, chest: 103, arm: 34.5, thigh: 58, calf: 38.5, wrist: 17,
+      }, '2026-02-01T00:00:00.000Z'),
+    ];
+    const series = bodyProgressSeries(events);
+    expect(series).toHaveLength(2);
+    expect(series[0].bodyFat).not.toBeNull();
+    expect(series[1].bodyFat).not.toBeNull();
+    expect(series[1].bodyFat as number).toBeLessThan(series[0].bodyFat as number);
+    expect(series[1].fatMass).toBeCloseTo((series[1].weight as number) * (series[1].bodyFat as number) / 100, 5);
+
+    const noScale = bodyProgressSeries([
+      event('measurement.saved', { date: '2026-03-01', sex: 'female', age: 30, height: 165, neck: 33, waist: 80, hip: 100 }),
+    ]);
+    expect(noScale[0].bodyFat).not.toBeNull();
+    expect(noScale[0].fatMass).toBeNull();
+  });
+
+  it('adds military equations and weights the consensus', () => {
+    const comp = bodyComposition(BODY);
+    const ids = comp.methods.map((method) => method.id);
+    expect(ids).toEqual(expect.arrayContaining(['navy', 'army', 'army-2023', 'marine', 'friedl', 'rfm']));
+    expect(comp.avg).not.toBeNull();
+    expect(comp.avg as number).toBeGreaterThan(5);
+    expect(comp.avg as number).toBeLessThan(45);
+    expect(comp.methods.every((method) => method.value >= 1.5 && method.value <= 70)).toBe(true);
+    const totalWeight = comp.methods.reduce((sum, method) => sum + (method.weight ?? 0), 0);
+    expect(totalWeight).toBeCloseTo(100, 6);
+    expect(comp.confidence).not.toBeNull();
+    expect(comp.confidence as number).toBeGreaterThan(20);
+    expect(comp.coverage).toBeGreaterThan(60);
+    // Pecho y pantorrilla no alimentan ninguna fórmula de grasa: no deben
+    // cambiar la cobertura ni la confianza.
+    expect(bodyComposition({ ...BODY, chest: 0, calf: 0 }).coverage).toBe(comp.coverage);
+
+    // Sin abdomen explícito se usa la cintura como aproximación, pero con el
+    // dato del ombligo la estimación abdominal cambia.
+    const withAbdomen = bodyComposition({ ...BODY, abdomen: 95 });
+    const withoutAbdomen = bodyComposition({ ...BODY, abdomen: 0 });
+    const armyWith = withAbdomen.methods.find((method) => method.id === 'army')!.value;
+    const armyWithout = withoutAbdomen.methods.find((method) => method.id === 'army')!.value;
+    expect(armyWith).toBeGreaterThan(armyWithout);
+  });
+
+  it('matches the published military equation examples', () => {
+    // DA Form 5500/5501 (2023): 210 lb + 35 in abdomen -> 17.48 %.
+    const male = bodyComposition({
+      ...BODY,
+      weight: 210 / 2.2046226218,
+      abdomen: 35 * 2.54,
+    });
+    expect(male.methods.find((method) => method.id === 'army-2023')!.value).toBeCloseTo(17.48, 1);
+
+    // The female one-site example uses 165 lb and 30 in -> 26.475 %.
+    const female = bodyComposition({
+      ...BODY,
+      sex: 'female',
+      weight: 165 / 2.2046226218,
+      abdomen: 30 * 2.54,
+    });
+    expect(female.methods.find((method) => method.id === 'army-2023')!.value).toBeCloseTo(26.475, 1);
+
+    // Wright (1980): Marine men use abdomen and neck in centimetres.
+    const marine = bodyComposition({ ...BODY, abdomen: 88, neck: 38 });
+    expect(marine.methods.find((method) => method.id === 'marine')!.value).toBeCloseTo(18.64, 1);
+  });
+
+  it('unlocks the female military equations with forearm and wrist', () => {
+    const female = {
+      ...BODY,
+      sex: 'female' as const,
+      weight: 65,
+      height: 165,
+      neck: 33,
+      waist: 80,
+      abdomen: 83,
+      hip: 100,
+      arm: 30,
+      forearm: 25,
+      thigh: 58,
+      wrist: 16,
+    };
+    const full = bodyComposition(female);
+    const ids = full.methods.map((method) => method.id);
+    expect(ids).toEqual(expect.arrayContaining(['army-women', 'marine-women', 'army-2023']));
+
+    const noForearm = bodyComposition({ ...female, forearm: 0 });
+    const missingIds = noForearm.methods.map((method) => method.id);
+    expect(missingIds).not.toContain('army-women');
+    expect(missingIds).not.toContain('marine-women');
+    expect(noForearm.coverage).toBeLessThan(full.coverage);
+    expect(noForearm.missing).toContain('antebrazo');
+  });
+
+  it('restores the last saved goal mode from the vault', () => {
+    expect(goalModeFromEvents([])).toBe('maintain');
+    const events = [
+      event('goal.mode', { mode: 'maintain' }, '2026-01-01T00:00:00.000Z'),
+      event('goal.mode', { mode: 'cut' }, '2026-01-02T00:00:00.000Z'),
+      event('goal.mode', { mode: 'bulk' }, '2026-01-03T00:00:00.000Z'),
+      event('goal.mode', { mode: 'cut' }, '2026-01-04T00:00:00.000Z'),
+    ];
+    expect(goalModeFromEvents(events)).toBe('cut');
+  });
+
+  it('keeps the day macros when only water is updated', () => {
+    const events = [
+      event('nutrition.logged', { date: '2026-01-01', kcal: 2100, protein: 130, carbs: 240, fat: 68, fiber: 28, water: 1000 }),
+      event('nutrition.logged', { date: '2026-01-01', kcal: 2100, protein: 130, carbs: 240, fat: 68, fiber: 28, water: 1500 }, '2026-01-01T12:00:00.000Z'),
+    ];
+    const today = latestNutrition(events, '2026-01-01');
+    expect(today?.water).toBe(1500);
+    expect(today?.kcal).toBe(2100);
+    expect(today?.protein).toBe(130);
+  });
+
+  it('returns a measurement merged with defaults', () => {
+    const latest = latestMeasurement([
+      event('measurement.saved', { id: 'm', date: '2026-01-01', weight: 80 }),
+    ]);
+    expect(latest?.weight).toBe(80);
+    expect(latest?.waist).toBe(0);
+  });
+
+  it('personalizes water limits with lean mass and training', () => {
+    const comp = bodyComposition(BODY);
+    expect(comp.leanMass).not.toBeNull();
+
+    const rest = computeWaterGuidance(BODY, 0, 0);
+    const trained = computeWaterGuidance(BODY, 420, 0);
+    expect(rest.targetMl).toBeGreaterThan(2000);
+    expect(trained.targetMl).toBeGreaterThan(rest.targetMl);
+    expect(trained.safeMaxMl).toBeGreaterThan(trained.targetMl);
+    expect(trained.hardMaxMl).toBeGreaterThan(trained.safeMaxMl);
+
+    const within = computeWaterGuidance(BODY, 0, rest.targetMl);
+    expect(within.status).toBe('ok');
+    expect(within.tone).toBe('success');
+
+    const excessive = computeWaterGuidance(BODY, 0, rest.safeMaxMl + 250);
+    expect(excessive.status).toBe('excess');
+    expect(excessive.tone).toBe('danger');
+
+    const dangerous = computeWaterGuidance(BODY, 0, rest.hardMaxMl + 500);
+    expect(dangerous.status).toBe('danger');
+    expect(dangerous.message).toMatch(/sobrehidratación/i);
+  });
+
+  it('scores satiety from protein, fiber, volume, water and energy density', () => {
+    const macros = computeMacros(BODY, 300, 'maintain');
+    expect(macros).not.toBeNull();
+    const comp = bodyComposition(BODY);
+
+    const poor = computeSatiety(
+      { date: '2026-01-01', kcal: 1800, protein: 45, carbs: 240, fat: 70, fiber: 5, water: 400 },
+      macros,
+      { grams: 500, weightKg: BODY.weight, bodyFat: comp.avg, leanMass: comp.leanMass, weeklyMinutes: 300 },
+    );
+    const good = computeSatiety(
+      { date: '2026-01-01', kcal: 2100, protein: 145, carbs: 230, fat: 65, fiber: 32, water: 2600 },
+      macros,
+      { grams: 1600, weightKg: BODY.weight, bodyFat: comp.avg, leanMass: comp.leanMass, weeklyMinutes: 300 },
+    );
+
+    expect(poor).not.toBeNull();
+    expect(good).not.toBeNull();
+    expect(good!.score).toBeGreaterThan(poor!.score);
+    expect(good!.energyDensity).toBeLessThan(poor!.energyDensity as number);
+    expect(good!.drivers).toHaveLength(6);
+    expect(good!.diagnosis).toMatch(/saciedad/i);
+  });
+});

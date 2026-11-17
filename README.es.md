@@ -1,0 +1,181 @@
+# Better Fitness Tracker
+
+[![CI](https://github.com/wulflo/BetterTracker/actions/workflows/ci.yml/badge.svg)](https://github.com/wulflo/BetterTracker/actions/workflows/ci.yml)
+[![Licencia: MIT](https://img.shields.io/badge/licencia-MIT-blue.svg)](LICENSE)
+[![Versión](https://img.shields.io/badge/versi%C3%B3n-0.9.19-informational.svg)](VERSION)
+[![Plataformas](https://img.shields.io/badge/plataformas-Linux%20%7C%20Windows%20%7C%20Android-lightgrey.svg)](#plataformas)
+
+Entrenamiento, composición corporal, nutrición y carga semanal en una app de escritorio **local-first**.
+
+Todo lo que registras se queda en una carpeta que tú eliges. Sin cuentas, sin nube y sin telemetría.
+
+Versión actual: **0.9.19**.
+
+**Leer en:** [English](README.md) · **Español**
+
+## Contenido
+
+- [Plataformas](#plataformas)
+- [Funciones](#funciones)
+- [Datos y privacidad](#datos-y-privacidad)
+- [Compilar](#compilar)
+- [Verificación](#verificación)
+- [Contribuir](#contribuir)
+- [Limitaciones conocidas](#limitaciones-conocidas)
+- [Licencia y avisos de terceros](#licencia-y-avisos-de-terceros)
+
+## Plataformas
+
+Better Fitness Tracker se compila y publica para Linux, Windows y Android.
+
+| Sistema | Artefactos | Actualización integrada |
+| --- | --- | --- |
+| Linux x86_64 | `.AppImage`, `.deb`, `.rpm`, `.snap`, `.flatpak` | Solo AppImage. `.deb` y `.rpm` se actualizan instalando el paquete nuevo; `.snap` y `.flatpak` se actualizan desde su tienda. |
+| Windows 10/11 x64 | NSIS `.exe` (instalación por usuario), `.msi` | NSIS. |
+| Microsoft Store (Windows 10/11 x64) | `.msix` (firmado por la Store) | Sin actualizador integrado; las actualizaciones las instala Microsoft Store. |
+| Android (arm64) | `.apk` firmada | Requiere Android 13 o superior (minSdk 33). La app descarga y verifica la APK, la guarda en `Descargas/BetterTracker` y el usuario la instala manualmente. |
+
+La build de Microsoft Store se genera aparte con `npm run build:store` y no
+compila `tauri-plugin-updater`; el panel de actualizaciones solo explica que
+las actualizaciones llegan desde la Store. Ver
+[Microsoft Store (MSIX)](docs/MICROSOFT_STORE.md).
+
+En Linux la app usa GTK/WebKit y funciona en Wayland de forma nativa. Cuando se detecta el driver propietario de NVIDIA, la app desactiva automáticamente el renderer DMA-BUF de WebKit para evitar el fallo de `libnvidia-eglcore` que puede congelar el escritorio. Si defines tú mismo `WEBKIT_DISABLE_DMABUF_RENDERER`, `WEBKIT_DMABUF_RENDERER_FORCE_SHM`, `WEBKIT_DISABLE_COMPOSITING_MODE`, `__NV_DISABLE_EXPLICIT_SYNC` o `LIBGL_ALWAYS_SOFTWARE`, esa detección se desactiva. Solo se ejecuta una instancia de la app; al abrirla de nuevo se enfoca la ventana existente.
+
+## Funciones
+
+La interfaz completa está disponible en español e inglés, con selector en Ajustes y preferencia guardada en el dispositivo. También se traducen alimentos, recetas, zonas corporales y métricas.
+
+### Panel
+
+- Resumen diario con peso actual, IMC, porcentaje de grasa estimado y volumen de entrenamiento de la semana.
+- Registro rápido de peso y formulario completo de medidas sin salir del panel.
+- Resumen de composición corporal, objetivos de macros, agua y fibra.
+- Banner de agua con botones rápidos (+250 ml, +500 ml, +1 L) que guardan el total del día en el log de ingesta al momento.
+- Modelo de saciedad dual: presión gástrica según el volumen de comida y señal bioquímica según proteína, fibra y composición de las comidas.
+- Gráfico de descenso de grasa basado en las medidas guardadas, sin depender de la báscula.
+- Resumen semanal de entrenamiento con mapa de calor muscular y zona más cargada.
+- Alertas de sobreentrenamiento por zona, comparando series y minutos semanales con rangos razonables.
+- Recordatorios locales mientras la app está abierta.
+
+### Entrenamiento
+
+- Biblioteca de ejercicios con zonas musculares e instrucciones, más ejercicios personalizados guardados en la bóveda.
+- Rutinas reutilizables con ejercicios ordenados, series y repeticiones objetivo, y notas.
+- Plan semanal para asignar rutinas a los días y mantener el calendario visible.
+- Mesociclos con duración, objetivo y progresión semanal.
+- Sesión en vivo con series, repeticiones, peso, RPE, temporizador de descanso y duración.
+- Detección automática de marcas personales cuando una serie supera el mejor peso anterior del ejercicio.
+- Calendario de sesiones, sesiones recientes, carga semanal y rendimiento por ejercicio.
+- Mapa de calor muscular, alertas de carga, carga por zona, marcas personales y progreso por zona.
+- Historial de ejercicios y entrenamientos integrado con la bóveda append-only.
+
+### Historial
+
+- Registro completo de sesiones con fecha, rutina, duración, RPE y todas las series.
+- Vistas de entrenamientos y marcas personales con filtros.
+- Borrado visible de registros individuales o de todo el historial, implementado como eventos nuevos en la bóveda y no como reescritura destructiva.
+
+### Figura corporal
+
+- Silueta adaptativa cuya forma sigue las circunferencias guardadas; los nodos se pueden arrastrar para previsualizar cambios.
+- Medidas de peso, altura, edad, sexo, cuello, pecho, cintura, cadera, brazo, muslo, pantorrilla y muñeca.
+- Estimaciones de grasa con RFM, US Navy, Deurenberg y CUN-BAE, mostrando los métodos disponibles por separado y su media.
+- IMC, cintura/cadera, cintura/altura, masa grasa y masa magra.
+- TMB con Mifflin-St Jeor, Katch-McArdle y Cunningham cuando hay datos suficientes.
+- TDEE estimado y tendencia de grasa. El porcentaje de grasa y la cintura se pueden seguir solo con medidas, sin báscula; la masa grasa en kg aparece cuando también hay peso.
+- Proyección de peso con fechas futuras basada en la composición corporal, la frecuencia de entrenamiento declarada o registrada, las sesiones de fuerza al mes, los pasos medios diarios y la ingesta media de calorías. El gasto se recalcula semana a semana con el peso simulado y el peso objetivo se recalcula con masa magra y grasa en vez de depender solo del IMC.
+
+### Nutrición
+
+- Base local con más de 200 alimentos comunes en 16 categorías.
+- Búsqueda sin acentos, filtros por categoría y comidas para desayuno, comida, cena y snack.
+- Alimentos personalizados guardados en la bóveda y disponibles en sesiones posteriores.
+- Cantidades en gramos, mililitros, unidades, tazas, cucharadas, cucharaditas, porciones, rebanadas, vasos, latas, botellas, filetes y puñados.
+- Cálculo dinámico de calorías, proteína, carbohidratos, grasas y fibra según cantidad y medida.
+- Borrador diario efímero: se borra al cambiar el día y nunca se convierte en historial permanente por sí solo.
+- Un único log de nutrición por fecha. Guardar de nuevo el mismo día actualiza el log de ese día de forma determinista y conserva el historial append-only.
+- Ajuste manual opcional de macros, agua y los indicadores de saciedad dual.
+- Valores nutricionales aproximados, pensados para estimar y no como prescripción médica o dietética.
+
+## Datos y privacidad
+
+- No hay cuentas, dependencia de la nube, telemetría ni sincronización LAN/P2P.
+- La bóveda es una carpeta elegida por ti. Todos los datos de la app viven en `<bóveda>/omega`. Cada evento nuevo se guarda como archivo propio (`omega/devices/<id>/events/<event-id>.json`); los `events.jsonl` antiguos se siguen leyendo y se deduplican por `id`.
+- En Android la bóveda se elige con el selector de carpetas del sistema (SAF) y el permiso de lectura/escritura se conserva entre reinicios. Las copias diarias se guardan en `longlife/<dispositivo>/<fecha>`; la heredada `Longlife` se migra al abrir la bóveda (escritorio) y se sigue leyendo como legado hasta que el usuario la renombre en SAF.
+- La app crea una copia de `omega` al día en `<bóveda>/longlife/<dispositivo>/<AAAA-MM-DD>` y conserva las 7 más recientes **de cada dispositivo**, sin tocar las de los demás. Las copias antiguas en `<bóveda>/longlife/<AAAA-MM-DD>` se siguen mostrando como legado.
+- En **Ajustes → Copias de seguridad** puedes crear una copia, ver la fecha, el dispositivo y el tamaño de cada una, y **restaurar** sin riesgo: solo se importan los eventos que falten en `omega/devices/restored-<copia>-<marca>/`, sin borrar ni sobrescribir nada. Cada copia guarda un manifiesto con archivos y bytes: si una sincronización la deja a medias, aparece como **dañada** y la copia del día se rehace sola.
+- Los ajustes incluyen una acción de alto riesgo para borrar todas las copias de `longlife`. Pide confirmación, no se puede deshacer y la copia diaria no se recrea hasta el día siguiente.
+- Si el número de eventos baja respecto al último visto en esa bóveda, la app avisa: una bóveda append-only no debe decrecer (suele indicar que FolderSync u otro equipo ha revertido archivos). Si sincronizas con FolderSync, usa modo copia incremental del móvil al PC (sin propagar borrados) y nunca subas una copia antigua del PC sobre el móvil.
+- El código de barras se introduce a mano en Ingesta: escribe o pega entre 6 y 14 dígitos y pulsa «Buscar» (o usa un lector USB/Bluetooth que termine en Enter). Los códigos UPC-A/EAN-13/GTIN se prueban en sus variantes (con y sin ceros iniciales, 12/13/14 dígitos) tanto en la app como en Open Food Facts. La app no pide permiso de cámara ni lee imágenes.
+- **No hay cifrado:** la bóveda se guarda como JSON en claro en `<bóveda>/omega` y las copias en `<bóveda>/longlife`. No la sincronices con la nube ni compartas el equipo sin cifrarla tú mismo. No se guardan fotos ni archivos: el pegado se limita a texto plano.
+- Las únicas conexiones de red son la comprobación **manual** de actualizaciones y la consulta opcional a Open Food Facts al buscar un código de barras. El código buscado se envía a `world.openfoodfacts.org`; nada se envía en segundo plano. Las builds de Microsoft Store no incluyen el actualizador y se actualizan desde la Store.
+- En escritorio las actualizaciones se firman con minisign y se verifican antes de instalar. En Android se descarga la APK de la release, se verifica su SHA-256 publicado y se guarda en Descargas para instalarla manualmente.
+- Al ser eventos JSON inmutables (con los JSONL antiguos aún legibles), los datos siguen siendo legibles y portables sin la app.
+
+La política de privacidad completa, incluido el caso de Microsoft Store, está en
+[PRIVACY_POLICY.md](PRIVACY_POLICY.md).
+
+## Compilar
+
+Requisitos: Node 22, Rust estable y las dependencias de Tauri 2 para tu sistema.
+
+```bash
+npm ci
+npm run build            # TypeScript + Vite
+cargo test --manifest-path src-tauri/Cargo.toml
+npm run tauri build      # paquete de la plataforma actual
+```
+
+Para desarrollo: `npm run tauri dev`.
+
+En Android, tras `npx tauri android init`, ejecuta una vez:
+
+```bash
+npm run icons
+```
+
+Ese comando genera los iconos desde `src-tauri/icons/app-icon.png` (escritorio y mipmaps de Android). Es idempotente y el workflow de release ya lo ejecuta. La app no pide permiso de cámara: el código de barras se introduce a mano.
+
+La versión vive en `VERSION`. Después de cambiarla:
+
+```bash
+node scripts/sync-version.mjs
+```
+
+Publicar un release requiere subir un tag `vX.Y.Z` que coincida con `VERSION`; un push normal a `main` solo ejecuta CI. El workflow de release compila entonces Linux, Windows y Android, firma los artefactos del updater y la APK, genera `latest.json` con la entrada `android-aarch64` (URL, tamaño y SHA-256), `release-manifest.json` y `SHA256SUMS.txt`, y publica el release. Consulta [docs/VERSIONING.md](docs/VERSIONING.md) y [docs/RELEASE_SECRETS.md](docs/RELEASE_SECRETS.md).
+
+## Verificación
+
+- `npm test` ejecuta las pruebas unitarias de métricas, alimentos, alimentos personalizados y borrador diario.
+- `npx tsc --noEmit` comprueba tipos.
+- `cargo test`, `cargo clippy` y el workflow de CI comprueban Rust.
+- `cargo deny` y `cargo audit` se ejecutan en CI para vigilar las licencias de dependencias y los avisos de seguridad conocidos.
+- El workflow de release verifica los artefactos de cada plataforma y exige las firmas del updater antes de publicar.
+
+La lista completa de comprobaciones está en [CONTRIBUTING.md](CONTRIBUTING.md#tests-and-continuous-integration).
+
+## Contribuir
+
+Las contribuciones son bienvenidas. Empieza por [CONTRIBUTING.md](CONTRIBUTING.md) para ver la puesta en marcha, las restricciones no negociables del proyecto, las convenciones de código y el proceso de revisión.
+
+Reporta las vulnerabilidades de seguridad en privado mediante el formulario de avisos de GitHub, no en una issue pública:
+**https://github.com/wulflo/BetterTracker/security/advisories/new**
+
+## Limitaciones conocidas
+
+- La bóveda no está cifrada.
+- El certificado de firma de código de Windows es opcional y no está incluido en el repositorio; sin él los instaladores se publican sin firma de sistema, aunque el updater sí va firmado.
+- El build de Windows se verifica en GitHub Actions; Linux se verifica localmente y en CI.
+- Las estimaciones de composición y carga son orientativas, no diagnóstico médico.
+- La base de alimentos incluida usa valores aproximados por 100 g/ml y sirve para estimar; no sustituye etiquetas, tablas oficiales ni asesoramiento profesional.
+
+## Licencia y avisos de terceros
+
+El proyecto se publica bajo licencia **MIT**. Consulta [LICENSE](LICENSE).
+
+El catálogo de códigos de barras incluido, derivado de Open Food Facts, se
+distribuye bajo la Open Database License (ODbL-1.0), y sus contenidos bajo la
+Database Contents License (DbCL-1.0). Las licencias de las dependencias, las
+excepciones MPL-2.0 y la atribución completa están en
+[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).

@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="color-scheme" content="dark" />
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin:0; height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    font-family: 'Segoe UI', 'Inter', system-ui, sans-serif;
+    background: radial-gradient(circle at 50% 0%, #2a1b4d 0%, #0d0a13 62%);
+    color:#ece7f4;
+    user-select:none;
+  }
+  .logo { width:96px; height:96px; border-radius:0; object-fit:contain; margin-bottom:1rem; }
+  .title { font-size:1.35rem; font-weight:750; letter-spacing:-.2px; }
+  .sub { margin-top:.45rem; opacity:.62; font-size:.82rem; }
+  .spinner { margin-top:1.25rem; width:26px; height:26px; border:3px solid rgba(208,188,255,.16); border-top-color:#d0bcff; border-radius:50%; animation:spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+  <img class="logo" src="logo.png" alt="" />
+  <div class="title">Better Fitness Tracker</div>
+  <div class="sub">Cargando…</div>
+  <div class="spinner"></div>
+</body>
+</html>
