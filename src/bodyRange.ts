@@ -608,6 +608,38 @@ function weightProgress(start: number, current: number, target: number): number 
  * ajustan cuánta masa magra se conserva (definición) o se gana (volumen) y el
  * ritmo seguro de cambio de peso.
  */
+
+/**
+ * Reduce la trayectoria diaria/semanal a un número fijo de puntos representativos
+ * (inicial, intermedios y final/objetivo) para que la tabla y el gráfico no
+ * muestren decenas de semanas casi idénticas. El integrador sigue trabajando
+ * día a día; solo se muestrea la salida expuesta a la interfaz.
+ */
+function sampleTrajectory(
+  points: ProjectionTrajectoryPoint[],
+  count = 5,
+): ProjectionTrajectoryPoint[] {
+  if (points.length <= count) return points.slice();
+  const last = points.length - 1;
+  const indices = new Set<number>();
+  for (let i = 0; i < count; i++) {
+    indices.add(Math.round((i * last) / (count - 1)));
+  }
+  indices.add(0);
+  indices.add(last);
+  const sorted = Array.from(indices).sort((a, b) => a - b);
+  const result: ProjectionTrajectoryPoint[] = [];
+  const seen = new Set<number>();
+  for (const idx of sorted) {
+    if (seen.has(idx)) continue;
+    seen.add(idx);
+    result.push(points[idx]);
+  }
+  if (result.length === 0) result.push(points[0], points[last]);
+  if (result[0] !== points[0]) result.unshift(points[0]);
+  if (result[result.length - 1] !== points[last]) result.push(points[last]);
+  return result;
+}
 export function projectBody(
   measures: BodyMeasures,
   goal: GoalMode,
@@ -1104,7 +1136,7 @@ export function projectBody(
     dailyBreakdown,
     weightLow,
     weightHigh,
-    trajectory: integration.points,
+    trajectory: sampleTrajectory(integration.points),
     adaptiveThermogenesis: integration.finalAt,
   };
 }
