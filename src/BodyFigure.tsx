@@ -130,13 +130,13 @@ export default function BodyFigure({
       <svg ref={svgRef} viewBox="0 0 300 420" role="img" aria-label={tx(lang, 'Figura corporal adaptativa', 'Adaptive body figure')}>
         <defs>
           <linearGradient id="figure-fill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#b69cff" stopOpacity="0.95" />
-            <stop offset="55%" stopColor="#8f6fe8" stopOpacity="0.85" />
-            <stop offset="100%" stopColor="#5b3ea8" stopOpacity="0.8" />
+            <stop offset="0%" stopColor="var(--primary-strong)" stopOpacity="0.95" />
+            <stop offset="55%" stopColor="var(--primary-deep)" stopOpacity="0.85" />
+            <stop offset="100%" stopColor="var(--primary-container)" stopOpacity="0.8" />
           </linearGradient>
           <linearGradient id="figure-stroke" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#eadcff" />
-            <stop offset="100%" stopColor="#a98bff" />
+            <stop offset="0%" stopColor="var(--on-primary-container)" />
+            <stop offset="100%" stopColor="var(--primary)" />
           </linearGradient>
         </defs>
 
@@ -228,7 +228,7 @@ export default function BodyFigure({
                 cx={node.x}
                 cy={node.y}
                 r={active ? 9 : 7}
-                fill={active ? '#ffd27d' : '#d0bcff'}
+                fill={active ? 'var(--warning)' : 'var(--primary)'}
                 stroke="#24124a"
                 strokeWidth="2"
                 style={{ cursor: 'grab' }}
