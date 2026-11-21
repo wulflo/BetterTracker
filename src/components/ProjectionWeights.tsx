@@ -53,7 +53,7 @@ export default function ProjectionWeights({
             : ''}
         </span>
         <span className="small muted">
-          {tx(lang, `${trajectory.length - 1} semanas proyectadas`, `${trajectory.length - 1} projected weeks`)}
+          {tx(lang, `${trajectory.length} puntos proyectados`, `${trajectory.length} projected points`)}
         </span>
       </div>
       <div className="projection-weights-scroll">

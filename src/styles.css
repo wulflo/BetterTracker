@@ -359,8 +359,8 @@
   --card-top-rgb: 255, 255, 255;
   --card-bottom-rgb: 250, 247, 255;
   /* Sidebar en modo claro: más oscura y con tinte violeta para mejor contraste. */
-  --sidebar-bg: #e9e0f2;
-  --topbar-bg: #ffffff;
+  --sidebar-bg: var(--bg-2);
+  --topbar-bg: var(--bg-2);
   --bottom-nav-bg: rgba(255, 255, 255, 0.98);
   --toast-bg: #ffffff;
   --scrollbar: #cfc4e0;
