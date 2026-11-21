@@ -12,12 +12,18 @@ import { tx } from './i18n';
 import type { ActivityLevel, BodyMeasures, GoalMode, Sex } from './types';
 import {
   addDays,
+  activityBaseFactor,
   bmrMifflin,
   bodyComposition,
   clamp,
+  computeEnergyExpenditure,
   computeMacros,
+  trainingEatKcalPerDay,
+  trainingSummary,
   todayISO,
   type BodyComposition,
+  type EnergyBreakdown,
+  type TrainingSummary,
 } from './metrics';
 
 export interface SafeRange {
@@ -34,12 +40,33 @@ export interface RangeStatus {
   color: 'info' | 'success' | 'warn' | 'error' | 'muted';
 }
 
+export interface ProjectionTrajectoryPoint {
+  date: string;
+  fatMass: number;
+  leanMass: number;
+  ffmi: number | null;
+  /** Peso en báscula: tejido + agua intracelular transitoria. */
+  scaleWeight: number;
+  /** Peso de tejido (grasa + masa magra). */
+  tissueWeight: number;
+  /** Peso de agua intracelular transitoria. */
+  waterWeight: number;
+}
+
 export interface ProjectionMilestone {
   date: string;
   weight: number;
   bodyFat: number | null;
   fatMass: number | null;
   leanMass: number | null;
+  /** Extremo bajo realista del peso en báscula (banda ±1σ). */
+  weightLow: number;
+  /** Extremo alto realista del peso en báscula. */
+  weightHigh: number;
+  /** Fecha estimada de llegada baja (banda). */
+  dateLow: string;
+  /** Fecha estimada de llegada alta (banda). */
+  dateHigh: string;
 }
 
 export type ProjectionTargetSource = 'composition' | 'bmi' | 'maintain' | 'none';
@@ -54,6 +81,10 @@ export interface ProjectionOptions {
   avgIntakeKcal?: number;
   /** Origen del dato para explicarlo en la interfaz. */
   intakeSource?: Exclude<IntakeSource, 'target'>;
+  /** Resumen de entrenamiento reciente (proyección energética y fuerza). */
+  summary?: TrainingSummary;
+  /** Frecuencia de entrenamiento declarada (por semana). */
+  declaredPerWeek?: number | null;
 }
 
 export interface BodyProjection {
@@ -91,9 +122,17 @@ export interface BodyProjection {
   /** Avisos de seguridad del balance, además del rango de IMC. */
   warnings: string[];
   milestones: ProjectionMilestone[];
+  /** Desglose del gasto del primer día (BMR, TEF, NEAT, EAT). */
+  dailyBreakdown: EnergyBreakdown;
+  /** Extremo bajo realista del peso final (peso en báscula). */
+  weightLow: number | null;
+  /** Extremo alto realista del peso final (peso en báscula). */
+  weightHigh: number | null;
+  /** Evolución proyectada de grasa, masa magra, FFMI y peso en báscula. */
+  trajectory: ProjectionTrajectoryPoint[];
+  /** Termogénesis adaptativa final de la simulación (kcal/día). */
+  adaptiveThermogenesis: number;
 }
-
-const KCAL_PER_KG_FAT = 7700;
 /** ≈3 sesiones de fuerza por semana: estímulo completo para conservar masa magra. */
 export const STRENGTH_SESSIONS_PER_MONTH_FULL = 12;
 
@@ -269,111 +308,290 @@ function shiftDate(days: number): string {
   return todayISO(addDays(new Date(), Math.max(0, Math.round(days))));
 }
 
-interface WeightSimulation {
-  weeks: number;
-  initialRateKg: number;
-  finalRateKg: number;
-  rateCapped: boolean;
+/* ------------------------------------------------------------------ */
+/* Integrador fisiológico diario de dos compartimentos                */
+/* (Kevin Hall / NIDDK + curva de Forbes)                              */
+/* ------------------------------------------------------------------ */
+
+/** Energía kcal/kg de grasa libra: ≈9400 kcal/kg. */
+const RHO_FAT_KCAL_KG = 9400;
+/** Energía kcal/kg de masa libre de grasa: ≈1800 kcal/kg. */
+const RHO_LEAN_KCAL_KG = 1800;
+/** Cap de transitorio de glucógeno/agua (kg). */
+const WATER_MAX_KG = 1.8;
+/** Escala del transitorio de glucógeno/agua por kcal de ingesta frente al mantenimiento inicial. */
+const WATER_SCALE_PER_KG = 0.010;
+/** α: 11 % del desbalance energético que se refleja en la termogénesis adaptativa. */
+const ADAPT_ALPHA = 0.11;
+/** τ: 18 días de constante de la termogénesis adaptativa. */
+const ADAPT_TAU_DAYS = 18;
+/** Longitud máxima de la simulación del balance energético. */
+const MAX_PROJECTION_DAYS = 1095;
+/**
+ * Horizonte plano cuando no hay cambio de tejido (mantenimiento o balance que
+ * no empuja al objetivo). Mantiene visibles la tabla y la curva en la UI.
+ */
+const FLAT_PROJECTION_DAYS = 84;
+/** Mínimo de pérdida de masa magra con fuerza frecuente en déficit (≈5–10 %). */
+const STRENGTH_MIN_LEAN = 0.075;
+
+interface IntegrationInputs {
+  m: BodyMeasures;
+  comp: BodyComposition;
+  goal: GoalMode;
+  strengthPerMonth: number;
+  avgSteps: number;
+  intakeKcal: number;
+  activityLevel: ActivityLevel | null;
+  lang: Lang;
+  now: Date;
+  targetWeight: number | null;
+  summary?: TrainingSummary;
+  declaredPerWeek?: number | null;
+}
+
+interface IntegrationResult {
+  points: ProjectionTrajectoryPoint[];
+  /** Trayectoria límite baja (≈ −8 % de variabilidad metabólica y adherencia). */
+  bandLowPoints: ProjectionTrajectoryPoint[];
+  /** Trayectoria límite alta. */
+  bandHighPoints: ProjectionTrajectoryPoint[];
+  final: { scaleWeight: number; tissueWeight: number; fatMass: number; leanMass: number };
+  weeklyRateKg: number;
+  finalWeeklyRateKg: number;
+  days: number;
   reached: boolean;
-  /** Peso al final de cada semana; el índice 0 es el peso actual. */
-  weeklyWeights: number[];
+  rateCapped: boolean;
+  /** AT final de la simulación (termogénesis adaptativa, kcal/día). */
+  finalAt: number;
+}
+
+function strengthEffect(strengthPerMonth: number): number {
+  return clamp(strengthPerMonth / 12, 0, 1);
+}
+
+/** BMR dinámico: promedio entre Katch-McArdle/Cunningham y Mifflin-St Jeor. */
+function dynamicBmr(m: BodyMeasures, lean: number): number {
+  if (lean > 0) {
+    return (370 + 21.6 * lean + 500 + 22 * lean) / 2;
+  }
+  return bmrMifflin(m.weight > 0 ? m.weight : 70, m.height > 0 ? m.height : 170, m.age > 0 ? m.age : 30, m.sex);
+}
+
+function walkingKcalPerDay(m: BodyMeasures, avgSteps: number): number {
+  return avgSteps > 0 ? (avgSteps / 1000) * 0.045 * (m.weight > 0 ? m.weight : 70) : 0;
+}
+
+/** Transitorio de glucógeno/agua tras un cambio de ingesta vs mantenimiento inicial (bounded ±1,8 kg). */
+function waterTransient(waterMax: number, day: number): number {
+  return waterMax * (1 - Math.exp(-Math.max(0, day) / 4));
+}
+
+function interpPoint(points: ProjectionTrajectoryPoint[], day: number): ProjectionTrajectoryPoint {
+  if (!points.length) {
+    return { date: '', fatMass: 0, leanMass: 0, ffmi: null, scaleWeight: 0, tissueWeight: 0, waterWeight: 0 };
+  }
+  const idx = clamp(day / 7, 0, points.length - 1);
+  const lo = Math.floor(idx);
+  const hi = Math.min(points.length - 1, lo + 1);
+  const f = idx - lo;
+  const a = points[lo];
+  const b = points[hi];
+  return {
+    date: a.date,
+    fatMass: a.fatMass + (b.fatMass - a.fatMass) * f,
+    leanMass: a.leanMass + (b.leanMass - a.leanMass) * f,
+    ffmi: a.ffmi !== null && b.ffmi !== null ? a.ffmi + (b.ffmi - a.ffmi) * f : null,
+    scaleWeight: a.scaleWeight + (b.scaleWeight - a.scaleWeight) * f,
+    tissueWeight: a.tissueWeight + (b.tissueWeight - a.tissueWeight) * f,
+    waterWeight: a.waterWeight + (b.waterWeight - a.waterWeight) * f,
+  };
+}
+
+type IntegrationCoreResult = Omit<IntegrationResult, 'bandLowPoints' | 'bandHighPoints'>;
+
+function integrateOnce(
+  inputs: IntegrationInputs,
+  bmrScale: number,
+  intakeScale: number,
+): IntegrationCoreResult {
+  const m = inputs.m;
+  const weight0 = m.weight > 0 ? m.weight : 0;
+  const heightM = m.height > 0 ? m.height / 100 : 1.7;
+  const summary = inputs.summary ?? trainingSummary([], []);
+  const intake = inputs.intakeKcal * intakeScale;
+  const fat0 = inputs.comp.fatMass ?? (weight0 > 0 ? 0.2 * weight0 : 0);
+  const lean0 = inputs.comp.leanMass ?? Math.max(0, weight0 - fat0);
+
+  const points: ProjectionTrajectoryPoint[] = [];
+  const push = (F: number, L: number, day: number, waterMax: number) => {
+    points.push({
+      date: todayISO(addDays(inputs.now, day)),
+      fatMass: F,
+      leanMass: L,
+      ffmi: L > 0 && heightM > 0 ? L / (heightM ** 2) : null,
+      scaleWeight: F + L + waterTransient(waterMax, day),
+      tissueWeight: F + L,
+      waterWeight: waterTransient(waterMax, day),
+    });
+  };
+
+  const maxDays = inputs.goal === 'maintain' ? 0 : MAX_PROJECTION_DAYS;
+  // Transitorio de glucógeno/agua: cambio de ingesta frente al mantenimiento
+  // inicial, acotado a ±1,8 kg.
+  const tdee0 = computeEnergyExpenditure(
+    m, summary, inputs.declaredPerWeek ?? null, inputs.avgSteps,
+    inputs.activityLevel, inputs.intakeKcal, inputs.lang,
+  ).tdee;
+  const waterMax = clamp((inputs.intakeKcal - tdee0) * WATER_SCALE_PER_KG, -WATER_MAX_KG, WATER_MAX_KG);
+
+  let F = fat0;
+  let L = lean0;
+  let at = 0;
+  push(F, L, 0, waterMax);
+
+  const deltas: number[] = [];
+  let weeklyRateKg = 0;
+  let finalWeeklyRateKg = 0;
+  // En mantenimiento el objetivo ya es el peso actual: se considera alcanzado.
+  let reached = inputs.goal === 'maintain';
+  let rateCapped = false;
+  let days = 0;
+  let prevTissue = fat0 + lean0;
+
+  if (maxDays > 0) {
+    const effect = strengthEffect(inputs.strengthPerMonth);
+    const rateCap =
+      inputs.goal === 'cut'
+        ? weight0 * (0.0075 + 0.0025 * effect)
+        : weight0 * (0.0025 + 0.0025 * effect);
+
+    for (let day = 1; day <= maxDays; day += 1) {
+      const W = F + L;
+      const B = dynamicBmr(m, L) * bmrScale;
+      const neat = activityBaseFactor(inputs.activityLevel) * B + walkingKcalPerDay(m, inputs.avgSteps);
+      const tef = 0.10 * intake;
+      const eat = trainingEatKcalPerDay(summary, inputs.declaredPerWeek ?? null, W);
+      const deltaE = intake - (B + tef + neat + eat - at);
+      // Si el balance no empuja hacia el objetivo (sin superávit en déficit o
+      // sin déficit en volumen), la proyección no avanza.
+      if (
+        (inputs.goal === 'cut' && deltaE >= 0) ||
+        (inputs.goal === 'bulk' && deltaE <= 0)
+      ) {
+        break;
+      }
+      // Termogénesis adaptativa: ΔE → AT exponencialmente (α ≈ 11 %, τ = 18 días).
+      at = at + (ADAPT_ALPHA * deltaE - at) / ADAPT_TAU_DAYS;
+
+      // Partición grasa/magra: curva de Forbes (10,4/F) modulada por fuerza.
+      const pForbes = 10.4 / Math.max(F, 1);
+      const surplus = Math.max(0, deltaE);
+      const deficit = Math.min(0, deltaE);
+      let dL = 0;
+      let dF = 0;
+      if (surplus > 0) {
+        // Superávit: la ganancia de masa magra escala con el estímulo de fuerza
+        // (hasta ~45–55 % del excedente entrenado; ~20–25 % sin fuerza).
+        const pLeanGain = inputs.strengthPerMonth > 0 ? 0.5 : 0.25;
+        const denominator = pLeanGain * RHO_LEAN_KCAL_KG + (1 - pLeanGain) * RHO_FAT_KCAL_KG;
+        const weightChange = surplus / denominator;
+        dL = pLeanGain * weightChange;
+        dF = (1 - pLeanGain) * weightChange;
+      } else if (deficit < 0) {
+        // Déficit: la fracción de pérdida que es magra se reduce con la fuerza
+        // frecuente hasta un mínimo fisiológico (≈5–10 %), dirigiendo el
+        // 90–95 % del déficit a la grasa libra.
+        const pLean = inputs.strengthPerMonth >= 12 ? STRENGTH_MIN_LEAN : Math.min(pForbes, 0.95);
+        const denominator = (1 - pLean) * RHO_FAT_KCAL_KG + pLean * RHO_LEAN_KCAL_KG;
+        const weightChange = -deficit / denominator;
+        dF = -(1 - pLean) * weightChange;
+        dL = -pLean * weightChange;
+      }
+      // Tope de ritmo: limitamos el cambio semanal de peso a la ventana
+      // segura del peso y la fuerza (definición: 0,75 % + 0,25 % por semana
+      // con fuerza completa; volumen: 0,25 % + 0,25 %).
+      const movement = Math.abs(dF + dL);
+      const dailyCap = rateCap / 7;
+      if (movement > dailyCap) {
+        const factor = dailyCap / movement;
+        dF *= factor;
+        dL *= factor;
+        rateCapped = true;
+      }
+      F += dF;
+      L += dL;
+
+      const delta = F + L - prevTissue;
+      prevTissue = F + L;
+      deltas.push(delta);
+      if (deltas.length > 7) deltas.shift();
+      // Los deltas son diarios; el ritmo que se muestra y se compara con el
+      // tope seguro es semanal (×7).
+      const dailyRate = Math.abs(deltas.reduce((a, b) => a + b, 0) / deltas.length);
+      if (day === 7) weeklyRateKg = dailyRate * 7;
+      finalWeeklyRateKg = dailyRate * 7;
+
+      if (inputs.targetWeight !== null) {
+        const want = inputs.goal === 'cut' ? inputs.targetWeight + 0.001 : inputs.targetWeight - 0.001;
+        if ((inputs.goal === 'cut' && F + L <= want) || (inputs.goal === 'bulk' && F + L >= want)) {
+          reached = true;
+          // El último punto de la trayectoria es el día de llegada.
+          push(F, L, day, waterMax);
+          days = day;
+          break;
+        }
+      }
+      if (day % 7 === 0 || day === maxDays) push(F, L, day, waterMax);
+      days = day;
+    }
+  }
+
+  // Sin progreso (mantenimiento o balance que no empuja al objetivo): se
+  // proyecta el peso actual en plano para que la tabla y la curva sigan
+  // visibles y expliquen que no habrá cambio de tejido. `days` se mantiene en
+  // 0 para no convertir un mantenimiento en una proyección con fecha de llegada.
+  if (points.length < 2) {
+    for (let day = 7; day <= FLAT_PROJECTION_DAYS; day += 7) {
+      push(F, L, day, 0);
+    }
+  }
+
+  const last = points[points.length - 1];
+  return {
+    points,
+    final: {
+      scaleWeight: last ? last.scaleWeight : weight0,
+      tissueWeight: last ? last.tissueWeight : F + L,
+      fatMass: last ? last.fatMass : F,
+      leanMass: last ? last.leanMass : L,
+    },
+    weeklyRateKg,
+    finalWeeklyRateKg,
+    days,
+    reached,
+    rateCapped,
+    finalAt: at,
+  };
 }
 
 /**
- * Simula el peso semana a semana. El gasto basal se recalcula con el peso
- * simulado, así que el ritmo inicial no se mantiene constante: al bajar de peso
- * el TDEE baja y el mismo déficit rinde menos. El tope de seguridad depende del
- * peso y del estímulo de fuerza.
+ * Simulador fisiológico diario (dt = 1 día) de dos compartimentos
+ * (Hall/Forbes + termogénesis adaptativa) más una banda de incertidumbre
+ * de ±8 % de variabilidad metabólica y adherencia calórica.
  */
-function simulateWeight(
-  startWeight: number,
-  targetWeight: number,
-  goal: GoalMode,
-  activity: number,
-  intakeKcal: number,
-  measures: BodyMeasures,
-  effect: number,
-  maxWeeks = 520,
-): WeightSimulation {
-  const weeklyWeights = [startWeight];
-  const empty: WeightSimulation = {
-    weeks: 0,
-    initialRateKg: 0,
-    finalRateKg: 0,
-    rateCapped: false,
-    reached: goal === 'maintain',
-    weeklyWeights,
-  };
-  if (
-    goal === 'maintain' ||
-    !(targetWeight > 0) ||
-    Math.abs(targetWeight - startWeight) < 0.05
-  ) {
-    return empty;
-  }
-
-  const direction = goal === 'cut' ? -1 : 1;
-  const height = measures.height > 0 ? measures.height : 170;
-  const age = measures.age > 0 ? measures.age : 30;
-  let weight = startWeight;
-  let weeks = 0;
-  let initialRate = 0;
-  let finalRate = 0;
-  let rateCapped = false;
-  let reached = false;
-
-  for (; weeks < maxWeeks; weeks += 1) {
-    const bmr = bmrMifflin(weight, height, age, measures.sex);
-    const tdee = bmr * activity;
-    const delta = intakeKcal - tdee;
-    // Si el balance ya no empuja hacia el objetivo, la proyección se detiene.
-    if (direction < 0 ? delta >= 0 : delta <= 0) break;
-
-    let rate = (Math.abs(delta) * 7) / KCAL_PER_KG_FAT;
-    const cap =
-      direction < 0
-        ? weight * (0.0075 + 0.0025 * effect)
-        : weight * (0.0025 + 0.0025 * effect);
-    if (rate > cap) {
-      rate = cap;
-      rateCapped = true;
-    }
-    if (!Number.isFinite(rate) || rate <= 0) break;
-
-    if (weeks === 0) initialRate = rate;
-    finalRate = rate;
-    const next = weight + direction * rate;
-    weight = direction < 0 ? Math.max(targetWeight, next) : Math.min(targetWeight, next);
-    weeklyWeights.push(weight);
-
-    if (
-      (direction < 0 && weight <= targetWeight + 1e-6) ||
-      (direction > 0 && weight >= targetWeight - 1e-6)
-    ) {
-      reached = true;
-      weeks += 1;
-      break;
-    }
-  }
-
+function runProjectionIntegration(inputs: IntegrationInputs): IntegrationResult {
+  const main = integrateOnce(inputs, 1, 1);
+  const bandLow = integrateOnce(inputs, 0.92, 0.92);
+  const bandHigh = integrateOnce(inputs, 1.08, 1.08);
   return {
-    weeks,
-    initialRateKg: initialRate,
-    finalRateKg: finalRate,
-    rateCapped,
-    reached,
-    weeklyWeights,
+    ...main,
+    bandLowPoints: bandLow.points,
+    bandHighPoints: bandHigh.points,
   };
 }
 
-function interpolateWeight(weeklyWeights: number[], week: number): number {
-  if (!weeklyWeights.length) return 0;
-  const clamped = clamp(week, 0, weeklyWeights.length - 1);
-  const low = Math.floor(clamped);
-  const high = Math.min(weeklyWeights.length - 1, low + 1);
-  const fraction = clamped - low;
-  return weeklyWeights[low] + (weeklyWeights[high] - weeklyWeights[low]) * fraction;
-}
+/** Interpolación de una trayectoria emitiendo un punto cada 7 días. */
 
 function weightProgress(start: number, current: number, target: number): number {
   const total = target - start;
@@ -405,7 +623,15 @@ export function projectBody(
   const bmi = composition.bmi;
   const bmiRange = safeBmiRange(measures.age, lang);
   const fatRange = safeBodyFatRange(measures.sex, measures.age, lang);
-  const macros = computeMacros(measures, weeklyMinutes, goal, activityLevel, lang, avgSteps);
+  const declaredIntakeRaw = Number(options.avgIntakeKcal);
+  const hasIntake = Number.isFinite(declaredIntakeRaw) && declaredIntakeRaw > 0;
+  const declaredIntake = hasIntake ? declaredIntakeRaw : 0;
+  const summary = options.summary;
+  const macros = computeMacros(measures, weeklyMinutes, goal, activityLevel, lang, avgSteps, {
+    summary,
+    declaredPerWeek: options.declaredPerWeek ?? null,
+    declaredIntake,
+  });
   const strength = Number.isFinite(strengthPerMonth) ? Math.max(0, strengthPerMonth) : 0;
   const effect = strengthFactor(strength);
   const empty: BodyProjection = {
@@ -437,6 +663,14 @@ export function projectBody(
     note: '',
     warnings: [],
     milestones: [],
+    dailyBreakdown: computeEnergyExpenditure(
+      measures, summary ?? trainingSummary([], []), options.declaredPerWeek ?? null,
+      avgSteps, activityLevel ?? null, hasIntake ? declaredIntake : 0, lang,
+    ),
+    weightLow: null,
+    weightHigh: null,
+    trajectory: [],
+    adaptiveThermogenesis: 0,
   };
   if (!macros || !measures.weight || measures.weight <= 0) return empty;
 
@@ -445,8 +679,6 @@ export function projectBody(
   const currentFatMass = composition.fatMass;
   const leanMass = composition.leanMass;
   const baseTargetFat = targetBodyFat(goal, measures.sex, fatRange);
-  const declaredIntake = Number(options.avgIntakeKcal);
-  const hasIntake = Number.isFinite(declaredIntake) && declaredIntake > 0;
   const intakeKcal = hasIntake ? declaredIntake : macros.kcal;
   const intakeSource: IntakeSource = hasIntake ? (options.intakeSource ?? 'manual') : 'target';
   const delta = intakeKcal - macros.tdee;
@@ -527,21 +759,48 @@ export function projectBody(
       ? targetWeight / (measures.height / 100) ** 2
       : null;
 
-  // Simulación semanal: el TDEE se recalcula con el peso y el tope de seguridad
-  // depende del peso y del estímulo de fuerza. Así un déficit de 500 kcal no
-  // rinde lo mismo en alguien de 60 kg que en alguien de 110 kg, y el ritmo
-  // inicial no se mantiene artificialmente constante al bajar de peso.
-  const simulation = simulateWeight(
-    measures.weight,
-    targetWeight ?? measures.weight,
+  // Simulador diario de dos compartimentos (Hall/Forbes + termogénesis
+  // adaptativa): el BMR y el balance energético se recalculan con el peso
+  // simulado, y la partición grasa/magra sigue la curva de Forbes
+  // modulada por la fuerza registrada.
+  const integration = runProjectionIntegration({
+    m: measures,
+    comp: composition,
     goal,
-    macros.activity,
+    strengthPerMonth: strength,
+    avgSteps,
     intakeKcal,
+    activityLevel: activityLevel ?? null,
+    lang,
+    now: new Date(),
+    targetWeight: targetWeight ?? measures.weight,
+    summary,
+    declaredPerWeek: options.declaredPerWeek ?? null,
+  });
+  const horizonDays = integration.days;
+  const dailyBreakdown = computeEnergyExpenditure(
     measures,
-    effect,
+    summary ?? trainingSummary([], []),
+    options.declaredPerWeek ?? null,
+    avgSteps,
+    activityLevel ?? null,
+    intakeKcal,
+    lang,
   );
-  const weeklyRateKg = simulation.initialRateKg;
-  const weeks = simulation.weeks;
+  const finalWeight = integration.final.scaleWeight;
+  const bandLowWeight = integration.bandLowPoints.length
+    ? integration.bandLowPoints[integration.bandLowPoints.length - 1].scaleWeight
+    : finalWeight;
+  const bandHighWeight = integration.bandHighPoints.length
+    ? integration.bandHighPoints[integration.bandHighPoints.length - 1].scaleWeight
+    : finalWeight;
+  const weightLow = Math.min(finalWeight, bandLowWeight, bandHighWeight);
+  const weightHigh = Math.max(finalWeight, bandLowWeight, bandHighWeight);
+  const weeklyRateKg = goal === 'maintain' ? 0 : integration.weeklyRateKg;
+  const finalWeeklyRateKg = goal === 'maintain' ? 0 : integration.finalWeeklyRateKg;
+  const weeks = goal === 'maintain' ? 0 : Math.max(0, Math.round(horizonDays / 7));
+  const targetReached = integration.reached;
+  const rateCapped = integration.rateCapped;
 
   const safe =
     (goal !== 'cut' || currentBmi === null || currentBmi > minBmi) &&
@@ -575,45 +834,58 @@ export function projectBody(
       ),
     );
   }
-  if (simulation.rateCapped && simulation.initialRateKg > 0) {
+  if (rateCapped && weeklyRateKg > 0) {
     warnings.push(
       tx(
         lang,
-        `El balance planteado supera el ritmo seguro para tu peso; la proyección se limita a ${simulation.initialRateKg.toFixed(2)} kg/semana (${((simulation.initialRateKg / measures.weight) * 100).toFixed(2)} % del peso).`,
-        `The planned balance exceeds the safe rate for your weight; the projection is capped at ${simulation.initialRateKg.toFixed(2)} kg/week (${((simulation.initialRateKg / measures.weight) * 100).toFixed(2)}% of body weight).`,
+        `El balance planteado supera el ritmo seguro para tu peso; la proyección se limita a ${weeklyRateKg.toFixed(2)} kg/semana (${((weeklyRateKg / measures.weight) * 100).toFixed(2)} % del peso).`,
+        `The planned balance exceeds the safe rate for your weight; the projection is capped at ${weeklyRateKg.toFixed(2)} kg/week (${((weeklyRateKg / measures.weight) * 100).toFixed(2)}% of body weight).`,
       ),
     );
   }
 
-  // Hitos: 4 pasos sobre la curva simulada. La composición se interpola con el
-  // progreso real de peso, no con una recta temporal, y el peso del hito sale
-  // de la simulación para que sea coherente con la fecha.
+  // Hitos: 4 puntos sobre la trayectoria de la simulación. La composición se
+  // interpola con el progreso de peso simulado, y la banda de incertidumbre
+  // aporta los rangos realistas (weightLow/weightHigh y fechas de llegada).
   const milestones: ProjectionMilestone[] = [];
-  if (targetWeight !== null && weeks > 0) {
+  if (targetWeight !== null && horizonDays > 0) {
+    const direction: 'down' | 'up' = goal === 'cut' ? 'down' : 'up';
     const steps = 4;
     for (let index = 1; index <= steps; index += 1) {
       const fraction = index / steps;
-      const projectedWeek = weeks * fraction;
-      const simulatedWeight = interpolateWeight(simulation.weeklyWeights, projectedWeek);
-      const progress = weightProgress(measures.weight, simulatedWeight, targetWeight);
-      let weight = simulatedWeight;
+      const projectedDay = horizonDays * fraction;
+      const point = interpPoint(integration.points, projectedDay);
+      const pointWeight = point.scaleWeight;
+      const bandAt = (points: ProjectionTrajectoryPoint[]) =>
+        interpPoint(points, projectedDay).scaleWeight;
+      const crossingDate = (points: ProjectionTrajectoryPoint[]): string => {
+        for (const p of points) {
+          if ((direction === 'down' && p.scaleWeight <= pointWeight) || (direction === 'up' && p.scaleWeight >= pointWeight)) {
+            return p.date;
+          }
+        }
+        return point.date;
+      };
+      const progress = weightProgress(measures.weight, pointWeight, targetWeight);
       let projectedFat: number | null = null;
       let projectedFatMass: number | null = null;
       let projectedLeanMass: number | null = null;
 
       if (leanMass !== null && targetLeanMass !== null) {
         projectedLeanMass = leanMass + (targetLeanMass - leanMass) * progress;
-        projectedFatMass = Math.max(0, weight - projectedLeanMass);
-        projectedFat = weight > 0 ? (projectedFatMass / weight) * 100 : null;
-      } else if (leanMass !== null && weight > 0) {
-        projectedFat = ((weight - leanMass) / weight) * 100;
-        projectedFatMass = weight - leanMass;
+        projectedFatMass = Math.max(0, pointWeight - projectedLeanMass);
+        projectedFat = pointWeight > 0 ? (projectedFatMass / pointWeight) * 100 : null;
+      } else if (leanMass !== null && pointWeight > 0) {
+        projectedFat = ((pointWeight - leanMass) / pointWeight) * 100;
+        projectedFatMass = pointWeight - leanMass;
         projectedLeanMass = leanMass;
       }
 
+      const bandLowAt = bandAt(integration.bandLowPoints);
+      const bandHighAt = bandAt(integration.bandHighPoints);
       milestones.push({
-        date: shiftDate(projectedWeek * 7),
-        weight,
+        date: shiftDate(projectedDay),
+        weight: pointWeight,
         bodyFat:
           projectedFat !== null && Number.isFinite(projectedFat) ? projectedFat : null,
         fatMass:
@@ -624,6 +896,10 @@ export function projectBody(
           projectedLeanMass !== null && Number.isFinite(projectedLeanMass)
             ? projectedLeanMass
             : null,
+        weightLow: Math.min(pointWeight, bandLowAt, bandHighAt),
+        weightHigh: Math.max(pointWeight, bandLowAt, bandHighAt),
+        dateLow: crossingDate(integration.bandLowPoints),
+        dateHigh: crossingDate(integration.bandHighPoints),
       });
     }
   }
@@ -667,11 +943,11 @@ export function projectBody(
             `Your target of ${Math.round(intakeKcal)} kcal/day is used as intake; if you usually eat differently, enter your average.`,
           );
   const paceText =
-    weeks > 1 && simulation.finalRateKg > 0 && simulation.finalRateKg < weeklyRateKg * 0.95
+    weeks > 1 && finalWeeklyRateKg > 0 && finalWeeklyRateKg < weeklyRateKg * 0.95
       ? tx(
           lang,
-          ` El ritmo baja a ${simulation.finalRateKg.toFixed(2)} kg/semana al final porque el gasto disminuye con el peso.`,
-          ` The pace drops to ${simulation.finalRateKg.toFixed(2)} kg/week by the end because expenditure falls with weight.`,
+          ` El ritmo baja a ${finalWeeklyRateKg.toFixed(2)} kg/semana al final porque el gasto disminuye con el peso.`,
+          ` The pace drops to ${finalWeeklyRateKg.toFixed(2)} kg/week by the end because expenditure falls with weight.`,
         )
       : '';
 
@@ -719,7 +995,7 @@ export function projectBody(
           ` (${Math.abs(Math.round(deficitPct))}% of your expenditure)`,
         )
       : '';
-  const cappedText = simulation.rateCapped
+  const cappedText = rateCapped
     ? tx(
         lang,
         ' El ritmo está limitado al máximo seguro para tu peso.',
@@ -782,7 +1058,7 @@ export function projectBody(
   } else {
     const rateText =
       lang === 'en' ? weeklyRateKg.toFixed(2) : weeklyRateKg.toFixed(2).replace('.', ',');
-    const arrivalText = simulation.reached
+    const arrivalText = targetReached
       ? tx(
           lang,
           `Objetivo: ${targetWeight!.toFixed(1)} kg en ~${formatProjectionDuration(weeks, lang)}, siempre que la actividad y la ingesta se mantengan.`,
@@ -811,19 +1087,24 @@ export function projectBody(
     targetSource,
     strengthPerMonth: Math.round(strength * 10) / 10,
     weeklyRateKg,
-    finalWeeklyRateKg: simulation.finalRateKg,
-    dailyKcalDelta: Math.round(delta),
+    finalWeeklyRateKg,
+    dailyKcalDelta: Math.round(intakeKcal - macros.tdee),
     deficitPct: deficitPct !== null && Number.isFinite(deficitPct) ? deficitPct : null,
     avgIntakeKcal: hasIntake ? Math.round(intakeKcal) : null,
     intakeSource,
-    rateCapped: simulation.rateCapped,
-    weeks: weeks > 0 ? Math.round(weeks * 10) / 10 : 0,
-    etaDate: weeks > 0 && simulation.reached ? shiftDate(weeks * 7) : null,
-    targetReached: simulation.reached,
+    rateCapped,
+    weeks,
+    etaDate: targetReached && horizonDays > 0 ? shiftDate(horizonDays) : null,
+    targetReached,
     safe,
     message,
     note,
     warnings,
     milestones,
+    dailyBreakdown,
+    weightLow,
+    weightHigh,
+    trajectory: integration.points,
+    adaptiveThermogenesis: integration.finalAt,
   };
 }

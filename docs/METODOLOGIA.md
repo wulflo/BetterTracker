@@ -57,9 +57,15 @@ La ecuación femenina requiere brazo, antebrazo, cuello, abdomen y muslo.
 
 - Hombres: `0.771·(abdomen − cuello) − 0.132·altura + 4.29`.
 
+### Métodos militares modernos
+
+- **Fuerza Aérea de EE. UU. — hombres (Fuchs et al., 1978)**: predice el FFM desde el bíceps flexionado y la altura; SEE ≈ 3,8.
+- **Fuerza Aérea de EE. UU. — mujeres (Brennen et al., 1979)**: FFM desde el antebrazo; SEE ≈ 3,9.
+- **Boer (1984)**: FFM desde peso y altura (`0,407·W + 0,267·H − 19,2` en hombres; `0,252·W + 0,473·H − 48,3` en mujeres).
+
 ### Consenso y confianza
 
-- Cada método aporta un **error estándar publicado (SEE)**. La fiabilidad se deriva de él como `1 − (SEE − 3)/6`, limitada a `0.45–0.98`, y se eleva al cuadrado para el peso. Cada entrada adicional a partir de dos añade un 4% de peso.
+- Cada método aporta un **error estándar publicado (SEE)**. La fiabilidad se deriva de él como `1 − (SEE − 3)/6`, limitada a `0.45–0.98`, y se eleva al cuadrado para el peso. La ponderación por varianza inversa usa w_base = (1/SEE²)·(1 + 0,05·max(0, inputs − 2)); la mediana ponderada inicial y una desviación estándar robusta (MAD × 1,4826, suelo del 1,5 % de la mediana) definen la región normal, y el factor de amortiguación tipo Huber h_i = min(1, 1,5σ/|v_i − mediana|) atenúa ecuaciones atípicas sin eliminarlas del desglose.
 - Los métodos se agrupan por **familia de medidas** (abdominal, cintura-cadera, cintura-altura, IMC y multi-sitio). Cada familia aporta como máximo el peso medio de sus métodos, de modo que varias ecuaciones abdominales correlacionadas no eclipsan a las de IMC o multi-sitio.
 - El valor mostrado es la media ponderada por esos pesos; el rango va del mínimo al máximo de los métodos disponibles.
 - La **confianza** (15–95%) combina la fiabilidad media, la cobertura de medidas, el acuerdo entre métodos y su número.
@@ -73,16 +79,26 @@ La ecuación femenina requiere brazo, antebrazo, cuello, abdomen y muslo.
 - IMC = peso / altura² (m).
 - Índice cintura/cadera (WHR) y cintura/altura (WHtR).
 
+### Clasificación militar (DoDI 1308.03 / USARIEM)
+
+- **FFMI**: `leanMass / (altura/100)²`; **FFMI normalizado**: `FFMI + 6,1·(1,8 − altura/100)`.
+- **Rango operativo USARIEM** (Potter, Looney & Friedl, 2022–2025): hombres 18,1–23,0 kg/m² (reserva magra baja ≤ 17,7, hipertrofia alta > 23,0); mujeres 15,5–18,3 (≤ 14,5, > 18,3).
+- **Estándar DoDI 1308.03**: la razón cintura/altura (`whtr`: óptimo < 0,50, moderado 0,50–0,55, elevado > 0,55) y el límite de % grasa por grupo de edad (17–20, 21–27, 28–39, 40+) y sexo (18–26 % hombres, 26–36 % mujeres); se marca `muscularOverride: true` cuando `bmi ≥ 25` pero `whtr < 0,50` y el % grasa está dentro del estándar militar.
+
 ## Gasto energético y macros
 
 - BMR Mifflin-St Jeor: `10·peso + 6.25·altura − 5·edad + constante`, con `+5` hombres, `−161` mujeres y `−78` si no se especifica.
 - BMR Katch-McArdle: `370 + 21.6·masa magra`.
 - BMR Cunningham: `500 + 22·masa magra`.
-- Factor de actividad según minutos semanales: `1.2` (<60), `1.375` (60–149), `1.55` (150–299), `1.725` (≥300).
+- **Modelo energético continuo** (`computeEnergyExpenditure`): `TDEE = BMR + TEF + NEAT + EAT`:
+  - **BMR dinámico**: promedio ponderado entre Katch-McArdle/Cunningham (cuando hay masa magra estimada) y Mifflin-St Jeor (sin ella); se recalculan cada día de la proyección con `L(t)` y `F(t)`.
+  - **TEF (efecto térmico de los alimentos)**: `0.10 × I` (10 % de la ingesta calórica media).
+  - **NEAT continuo**: factor base no deportivo según nivel de actividad (`sedentary: 1,15`, `light: 1,22`, `moderate: 1,30`, `high: 1,38`, `very_high: 1,46`, `auto: 1,20`) × BMR dinámico, más el gasto neto continuo de caminar `kcal_pasos(t) = (avgSteps / 1000) × 0.045 × W(t)` (sin escalones: 6200 y 7800 pasos generan gastos distintos y proporcionales).
+  - **EAT continuo**: por ritmo semanal de entrenamiento, con `estimateTraining(summary, declaredPerWeek)`; por sesión `min/sesión × MET × W(t)` (≈4,5 MET en fuerza, ≈6,5 en cardio/mixto) y promediado diariamente (sesiones/sem ÷ 7).
 - **Frecuencia declarada**: `training.frequency` acepta sesiones por semana o por mes y se normaliza a sesiones por semana. `estimateTraining` combina la declarada con la observada en los últimos 30 días y usa la **mayor** de ambas, de modo que registrar solo 1 de 5 sesiones no subestima el gasto. Los minutos semanales observados en 7 días actúan como suelo.
 - **Duración media**: sale de las sesiones registradas; solo se asumen 45 min cuando no hay ninguna. La **fuerza mensual** se estima con la proporción de sesiones de fuerza entre las registradas y, sin registros, se asumen de fuerza las sesiones declaradas.
-- Pasos diarios medios: se traducen a un PAL orientativo (`<4000` → `1.2`, `<6000` → `1.3`, `<8000` → `1.4`, `<10000` → `1.5`, `<12500` → `1.6`, `<15000` → `1.725`, resto `1.85`). Se usa el **mayor** entre ese valor y el nivel de actividad declarado o automático, para no sumar dos veces el mismo gasto.
-- **Ingesta media** (`intake.average`): es un dato **manual**, no derivado. La proyección usa ese valor; si no existe, usa la media de los días con registro en 28 días (mínimo 3) o el objetivo de calorías. El atajo de la interfaz solo rellena el campo editable.
+- **Pasos diarios medios**: contribuyen NEAT continuo aditivo ((pasos/1000) × 0,045 × peso kcal/día).
+- **Ingesta media** (`intake.average`): es un dato **manual**, no derivado. La proyección usa ese valor como ingesta del balance y en el TEF; si no existe, usa la media de los días con registro en 28 días (mínimo 3) o el objetivo de calorías. El atajo de la interfaz solo rellena el campo editable.
 - Calorías objetivo: TDEE × `0.85` (definición), `1.10` (volumen) o `1.0` (mantenimiento).
 - Proteína: `2.0 g/kg` en definición, `1.8 g/kg` en el resto.
 - Grasa: máximo entre `0.6 g/kg` y el `24%` de las calorías.
@@ -101,9 +117,16 @@ El peso objetivo no se limita al IMC cuando hay composición corporal:
 - En volumen se proyecta hasta un `1,5%` extra de masa magra con fuerza frecuente; sin fuerza, el superávit no se atribuye a músculo.
 - El IMC objetivo se sigue mostrando como referencia, pero no recorta un objetivo que la composición justifica (por ejemplo, en personas con mucha masa muscular).
 
-La fecha y los hitos futuros salen de una **simulación semana a semana** del balance energético. Cada semana se recalcula la TMB y el TDEE con el peso simulado, de modo que el ritmo no se mantiene artificialmente al bajar de peso:
+La fecha y los hitos futuros salen del **integrador fisiológico diario** (Hall/Forbes + termogénesis adaptativa):
 
-- El déficit o superávit sale de la ingesta media frente al TDEE simulado: un déficit de 500 kcal y uno de 800 kcal no producen el mismo ritmo, y al perder peso el gasto baja y el ritmo se frena.
+- Estado inicial de dos compartimentos (`F(0)`, `L(0)`) desde `bodyComposition`; sin composición, se asume ≈80 % de masa magra.
+- Cada día (`dt = 1 día`): `TDEE(t) = BMR(t) + TEF + NEAT(t) + EAT(t) − AT(t)`; la pérdida/ganancia se particiona grasa/magra siguiendo la curva de Forbes (`10,4/F(t)`) modulada por la fuerza mensual:
+  - En déficit, fuerza ≥12 sesiones/mes reduce la fracción de pérdida magra hasta el mínimo fisiológico ≈5–10 %, dirigiendo el 90–95 % del déficit a la grasa.
+  - En superávit, la ganancia de masa magra escala con el estímulo de fuerza (hasta ≈45–55 % del exceso entrenado; ≈20–25 % sin fuerza).
+- **Termogénesis adaptativa**: `dAT/dt = (α·ΔE(t) − AT(t))/τ` con `α ≈ 0,11` (11 % del desbalance `ΔE = I − TDEE`) y `τ = 18 días`, reflejando la adaptación metabólica real en déficit o superávit sostenidos.
+- **Transitorio de glucógeno/agua**: `ΔW_agua(t) = ΔW_max·(1 − e^(−t/4))`, acotado a ±1,8 kg; cada punto de la serie distingue el `scaleWeight` (peso en báscula) del `tissueWeight` (`F(t) + L(t)`).
+- **Banda de incertidumbre (±1σ)**: se ejecutan las trayectorias límite (±8 % de variabilidad metabólica y de adherencia calórica) y se devuelven `weightLow`, `weightHigh`, hitos con rango realista y fechas de llegada con rango.
+- El déficit/superávit sale de la ingesta media frente al TDEE simulado: un déficit de 500 kcal y uno de 800 kcal no producen el mismo ritmo, y al perder peso el gasto baja y el ritmo se frena.
 - El ritmo semanal está limitado por seguridad según el peso y la fuerza mensual:
   - Definición: `0,75–1,0 %` del peso por semana según la fuerza mensual (0–12 sesiones).
   - Volumen: `0,25–0,5 %` del peso por semana según la fuerza mensual.

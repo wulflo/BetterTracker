@@ -26,6 +26,8 @@ import { Icon } from './components/Icons';
 import { MiniSparkline } from './components/Charts';
 import FatTrend from './components/FatTrend';
 import ProjectionInputs from './components/ProjectionInputs';
+import ProjectionCurve from './components/ProjectionCurve';
+import ProjectionWeights from './components/ProjectionWeights';
 import { tx, useLanguage } from './i18n';
 
 interface Props {
@@ -84,6 +86,8 @@ export default function BodyView({ deviceId, events, onRefresh, notify }: Props)
           avgIntakeKcal: projectionInputs.effectiveIntake,
           intakeSource:
             projectionInputs.intakeSource === 'logged' ? 'logged' : 'manual',
+          summary: exerciseSummary,
+          declaredPerWeek: training.effectivePerWeek,
         },
       ),
     [
@@ -91,10 +95,12 @@ export default function BodyView({ deviceId, events, onRefresh, notify }: Props)
       goal,
       training.weeklyMinutes,
       training.strengthPerMonth,
+      training.effectivePerWeek,
       activity,
       comp,
       lang,
       steps,
+      exerciseSummary,
       projectionInputs.effectiveIntake,
       projectionInputs.intakeSource,
     ],
@@ -298,29 +304,128 @@ export default function BodyView({ deviceId, events, onRefresh, notify }: Props)
             </div>
           )}
 
-          <details className="details">
-            <summary>{tx(lang, 'Ajustar actividad, frecuencia, pasos y calorías medias', 'Adjust activity, frequency, steps and average calories')}</summary>
-            <div style={{ marginTop: 12, display: 'grid', gap: 12 }}>
-              <label className="field">
-                <span className="field-label">{tx(lang, 'Nivel de actividad física', 'Physical activity level')}</span>
-                <Select
-                  value={activity}
-                  onChange={(value) => void changeActivity(value as ActivityLevel)}
-                  options={[AUTO_ACTIVITY, ...ACTIVITY_LEVELS].map((option) => ({
-                    value: option.id,
-                    label: `${activityOption(option.id, lang).label} · ${
-                      option.multiplier > 0
-                        ? `×${option.multiplier}`
-                        : tx(lang, 'según entrenamiento', 'based on training')
-                    }`,
-                    hint: activityOption(option.id, lang).description,
-                  }))}
-                />
-                <span className="hint">{activityOption(activity, lang).description}</span>
-              </label>
-              <ProjectionInputs controller={projectionInputs} lang={lang} />
+          <div style={{ display: 'grid', gap: 12 }}>
+            <label className="field">
+              <span className="field-label">{tx(lang, 'Nivel de actividad física', 'Physical activity level')}</span>
+              <Select
+                value={activity}
+                onChange={(value) => void changeActivity(value as ActivityLevel)}
+                options={[AUTO_ACTIVITY, ...ACTIVITY_LEVELS].map((option) => ({
+                  value: option.id,
+                  label: `${activityOption(option.id, lang).label} · ${
+                    option.multiplier > 0
+                      ? `×${option.multiplier}`
+                      : tx(lang, 'según entrenamiento', 'based on training')
+                  }`,
+                  hint: activityOption(option.id, lang).description,
+                }))}
+              />
+              <span className="hint">{activityOption(activity, lang).description}</span>
+            </label>
+            <ProjectionInputs controller={projectionInputs} lang={lang} weight={form.weight} />
+          </div>
+
+          {/* Desglose del gasto diario: BMR, TEF, NEAT, EAT, termogénesis adaptativa. */}
+          <div className="grid grid-2" style={{ gap: 10 }}>
+            <div className="metric">
+              <div className="metric-label">{tx(lang, 'BMR dinámico', 'Dynamic BMR')}</div>
+              <div className="metric-value-lg">{Math.round(projection.dailyBreakdown.bmr)} kcal</div>
+              <div className="metric-caption">
+                {tx(lang, 'Promedio Katch/Cunningham + Mifflin (masa magra actual)', 'Katch/Cunningham + Mifflin average (current lean mass)')}
+              </div>
             </div>
-          </details>
+            <div className="metric">
+              <div className="metric-label">{tx(lang, 'TEF (efecto térmico)', 'TEF (thermic effect)')}</div>
+              <div className="metric-value-lg">{Math.round(projection.dailyBreakdown.tef)} kcal</div>
+              <div className="metric-caption">{tx(lang, '10 % de la ingesta media', '10% of average intake')}</div>
+            </div>
+            <div className="metric">
+              <div className="metric-label">
+                {tx(lang, 'NEAT (pasos + actividad base)', 'NEAT (steps + base activity)')}
+              </div>
+              <div className="metric-value-lg">{Math.round(projection.dailyBreakdown.neat)} kcal</div>
+              <div className="metric-caption">
+                {tx(lang, 'Factor base × BMR + gasto de caminar', 'Base factor × BMR + walking expenditure')}
+              </div>
+            </div>
+            <div className="metric">
+              <div className="metric-label">{tx(lang, 'EAT (entreno)', 'EAT (training)')}</div>
+              <div className="metric-value-lg">{Math.round(projection.dailyBreakdown.eat)} kcal</div>
+              <div className="metric-caption">
+                {tx(lang, 'Sesiones/sem ÷ 7 × min/sesión × MET × W(t)', 'Sessions/wk ÷ 7 × min/session × MET × W(t)')}
+              </div>
+            </div>
+            <div className="metric">
+              <div className="metric-label">
+                {tx(lang, 'Adaptación metabólica (AT)', 'Metabolic adaptation (AT)')}
+              </div>
+              <div className="metric-value-lg">{Math.round(projection.adaptiveThermogenesis)} kcal</div>
+              <div className="metric-caption">
+                {tx(lang, '11 % del desbalance energético, τ = 18 días', '11% of the energy imbalance, τ = 18 days')}
+              </div>
+            </div>
+            <div className="metric">
+              <div className="metric-label">{tx(lang, 'TDEE total', 'Total TDEE')}</div>
+              <div className="metric-value-lg">{Math.round(projection.dailyBreakdown.tdee)} kcal</div>
+              <div className="metric-caption">{tx(lang, 'BMR + TEF + NEAT + EAT − AT', 'BMR + TEF + NEAT + EAT − AT')}</div>
+            </div>
+          </div>
+
+          {(projection.weightLow !== null || projection.weightHigh !== null) && (
+            <div className="grid grid-2" style={{ gap: 10 }}>
+              <div className="metric">
+                <div className="metric-label">
+                  {tx(lang, 'Banda de confianza del peso', 'Weight confidence band')}
+                </div>
+                <div className="metric-value-lg">
+                  {projection.weightLow?.toFixed(1)} – {projection.weightHigh?.toFixed(1)} kg
+                </div>
+                <div className="metric-caption">
+                  {tx(
+                    lang,
+                    '±8 % de variabilidad metabólica y adherencia; hitos dentro de la banda',
+                    '±8% metabolic and adherence variability; milestones within the band',
+                  )}
+                </div>
+              </div>
+              {projection.milestones.length > 0 && (
+                <div className="metric">
+                  <div className="metric-label">
+                    {tx(lang, 'Hitos con rango realista', 'Milestones with realistic range')}
+                  </div>
+                  <div className="metric-caption">
+                    {projection.milestones.map((m) => `${m.date}: ${m.weight.toFixed(1)} kg [${m.weightLow.toFixed(1)}–${m.weightHigh.toFixed(1)}]`).join(' · ')}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {projection.trajectory.length > 1 && (
+            <div className="stack-sm">
+              <span className="field-label">
+                {tx(lang, 'Pesos proyectados hasta el objetivo', 'Projected weights to target')}
+              </span>
+              <ProjectionWeights
+                trajectory={projection.trajectory}
+                targetWeight={projection.targetWeight}
+                targetFatMass={projection.targetFatMass}
+                targetLeanMass={projection.targetLeanMass}
+                targetReached={projection.targetReached}
+                etaDate={projection.etaDate}
+                lang={lang}
+              />
+            </div>
+          )}
+
+          {projection.trajectory.length > 1 && (
+            <div className="stack-sm">
+              <span className="field-label">
+                {tx(lang, 'Evolución proyectada de composición corporal', 'Projected body composition evolution')}
+              </span>
+              <ProjectionCurve trajectory={projection.trajectory} lang={lang} />
+            </div>
+          )}
 
           {projection.milestones.length > 0 && (
             <div className="projection-track">
@@ -342,6 +447,73 @@ export default function BodyView({ deviceId, events, onRefresh, notify }: Props)
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="card">
+        <div className="card-header">
+          <div>
+            <div className="card-title"><Icon name="scale" /> {tx(lang, 'Indicadores militares modernos', 'Modern military indicators')}</div>
+            <div className="card-sub">
+              {tx(lang, 'FFMI (DoDI 1308.03 / USARIEM) y el estándar militar de la Fuerza Aérea.', 'FFMI (DoDI 1308.03 / USARIEM) and the Air Force military standard.')}
+            </div>
+          </div>
+        </div>
+        <div className="card-body stack">
+          <div className="grid grid-2" style={{ gap: 10 }}>
+            <div className="metric">
+              <div className="metric-label">{tx(lang, 'FFMI', 'FFMI')}</div>
+              <div className="metric-value-lg">{comp.ffmi !== null ? comp.ffmi.toFixed(2) : '—'}</div>
+              <div className="metric-caption">
+                {comp.ffmiStatus === 'low'
+                  ? tx(lang, 'Reserva magra baja', 'Low lean reserve')
+                  : comp.ffmiStatus === 'operational'
+                    ? tx(lang, 'Operativo', 'Operational')
+                    : comp.ffmiStatus === 'high'
+                      ? tx(lang, 'Hipertrofia alta', 'High hypertrophy')
+                      : tx(lang, 'Sin FFMI', 'No FFMI')}
+              </div>
+            </div>
+            <div className="metric">
+              <div className="metric-label">{tx(lang, 'FFMI normalizado', 'Normalized FFMI')}</div>
+              <div className="metric-value-lg">{comp.normalizedFfmi !== null ? comp.normalizedFfmi.toFixed(2) : '—'}</div>
+              <div className="metric-caption">{tx(lang, 'FFMI + 6,1·(1,8 − altura/100)', 'FFMI + 6.1·(1.8 − height/100)')}</div>
+            </div>
+            <div className="metric">
+              <div className="metric-label">{tx(lang, 'Estándar DoDI 1308.03', 'DoDI 1308.03 standard')}</div>
+              <div className="metric-value-lg">
+                {comp.militaryStandard.pass
+                  ? tx(lang, 'Conforme', 'Conforming')
+                  : comp.militaryStandard.pass === false
+                    ? tx(lang, 'A revisar', 'To review')
+                    : '—'}
+              </div>
+              <div className="metric-caption">
+                {comp.militaryStandard.whtrBand !== null
+                  ? tx(lang, `Banda whtr: ${comp.militaryStandard.whtrBand}`, `Whtr band: ${comp.militaryStandard.whtrBand}`)
+                  : ''}
+                {comp.militaryStandard.fatOk === true
+                  ? tx(lang, ' · grasa dentro del límite', ' · fat within limit')
+                  : comp.militaryStandard.fatOk === false
+                    ? tx(lang, ' · grasa fuera del límite', ' · fat outside the limit')
+                    : ''}
+              </div>
+            </div>
+            {comp.muscularOverride && (
+              <div className="metric">
+                <div className="metric-label">{tx(lang, 'Aviso de masa muscular', 'Muscular mass warning')}</div>
+                <div className="metric-value-lg">{tx(lang, 'IMC sobreestimado', 'BMI overestimated')}</div>
+                <div className="metric-caption">
+                  {tx(lang, 'IMC ≥ 25 con whtr óptimo y grasa dentro del estándar militar: la masa muscular reduce el IMC medido.', 'BMI ≥ 25 with optimal whtr and fat within the military standard: muscle mass lowers measured BMI.')}
+                </div>
+              </div>
+            )}
+          </div>
+          {comp.ffmiStatus && (
+            <div className="small muted">
+              {tx(lang, 'Umbrales de USARIEM: reserva magra baja ≤ 17,7 (hombres) / ≤ 14,5 (mujeres); hipertrofia alta > 23,0 / > 18,3 kg/m².', 'USARIEM thresholds: low lean reserve ≤ 17.7 (men) / ≤ 14.5 (women); high hypertrophy > 23.0 / > 18.3 kg/m².')}
             </div>
           )}
         </div>

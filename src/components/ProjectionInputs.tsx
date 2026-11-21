@@ -7,6 +7,8 @@ import { NumberInput } from './Fields';
 interface Props {
   controller: ProjectionInputsController;
   lang: Lang;
+  /** Peso actual del usuario; usado para el kcal/día que aportan los pasos como NEAT. */
+  weight?: number;
 }
 
 function formatNumber(value: number, lang: Lang): string {
@@ -20,7 +22,7 @@ function formatNumber(value: number, lang: Lang): string {
  * ingesta media existen porque el registro puede estar incompleto: los días sin
  * log no deben hacer creer que la persona entrena o come menos de lo real.
  */
-export default function ProjectionInputs({ controller, lang }: Props) {
+export default function ProjectionInputs({ controller, lang, weight }: Props) {
   const { training, loggedIntake } = controller;
   const monthly = controller.frequencyUnit === 'month';
   const displayedFrequency = monthly
@@ -28,43 +30,48 @@ export default function ProjectionInputs({ controller, lang }: Props) {
     : controller.frequencyPerWeek;
   const frequencyMax = monthly ? 60 : 14;
 
-  const trainingHint = controller.hasFrequency
-    ? tx(
-        lang,
-        `Declaradas ${training.effectivePerWeek}/sem · registradas ${training.loggedPerWeek}/sem. Se usa la mayor (${training.effectivePerWeek}/sem, ${training.avgSessionMinutes} min por sesión).${training.assumedStrength ? ' Sin registros de fuerza: se asumen de fuerza.' : ''}`,
-        `Declared ${training.effectivePerWeek}/wk · logged ${training.loggedPerWeek}/wk. The higher value is used (${training.effectivePerWeek}/wk, ${training.avgSessionMinutes} min per session).${training.assumedStrength ? ' No strength logs: sessions are assumed to be strength work.' : ''}`,
-      )
-    : training.loggedPerWeek > 0
+  // Desglose continuo: pasos → NEAT adicional ((pasos/1000) × 0,045 × peso kcal/día).
+  const stepsKcalPerDay =
+    controller.steps > 0 && weight ? Math.round((controller.steps / 1000) * 0.045 * weight) : 0;
+
+  const trainingHint =
+    training.effectivePerWeek > 0
       ? tx(
           lang,
-          `Registradas ${training.loggedPerWeek}/sem (${training.avgSessionMinutes} min por sesión). Si entrenas más días de los que registras, indica tu frecuencia habitual.`,
-          `Logged ${training.loggedPerWeek}/wk (${training.avgSessionMinutes} min per session). If you train on more days than you log, enter your usual frequency.`,
+          `EAT: ${Math.round(training.effectivePerWeek / 7)} sesiones/día × ${Math.round(training.avgSessionMinutes)} min × MET × W(t) se suman al gasto diario del modelo continuo.${controller.hasFrequency ? ` Declaradas ${training.effectivePerWeek}/sem · registradas ${training.loggedPerWeek}/sem (se usa la mayor).` : ` Registradas ${training.loggedPerWeek}/sem.`}`,
+          `EAT: ${Math.round(training.effectivePerWeek / 7)} sessions/day × ${Math.round(training.avgSessionMinutes)} min × MET × W(t) are added to the daily expenditure of the continuous model.${controller.hasFrequency ? ` Declared ${training.effectivePerWeek}/wk · logged ${training.loggedPerWeek}/wk (the higher is used).` : ` Logged ${training.loggedPerWeek}/wk.`}`,
         )
-      : tx(
-          lang,
-          'Opcional. Si solo registras algunos días, indica cuántas veces entrenas para no subestimar el gasto.',
-          'Optional. If you only log some days, enter how often you train so expenditure is not underestimated.',
-        );
+      : training.loggedPerWeek > 0
+        ? tx(
+            lang,
+            `Registradas ${training.loggedPerWeek}/sem (${training.avgSessionMinutes} min por sesión). Si entrenas más días de los que registras, indica tu frecuencia habitual.`,
+            `Logged ${training.loggedPerWeek}/wk (${training.avgSessionMinutes} min per session). If you train on more days than you log, enter your usual frequency.`,
+          )
+        : tx(
+            lang,
+            'Opcional. Si solo registras algunos días, indica cuántas veces entrenas para no subestimar el gasto.',
+            'Optional. If you only log some days, enter how often you train so expenditure is not underestimated.',
+          );
 
   const stepsHint =
-    controller.stepActivity !== null
+    controller.steps > 0
       ? tx(
           lang,
-          `Se usa como ×${controller.stepActivity.toFixed(2)} de actividad si supera al nivel elegido.`,
-          `Used as an activity multiplier of ×${controller.stepActivity.toFixed(2)} if it exceeds the selected level.`,
+          `Aportan ≈${stepsKcalPerDay} kcal/día como NEAT adicional sin escalones: 6200 y 7800 pasos producen gastos distintos y proporcionales.`,
+          `They contribute ≈${stepsKcalPerDay} kcal/day as extra NEAT with no steps: 6200 and 7800 steps produce different, proportional expenditure.`,
         )
       : tx(
           lang,
-          'Opcional. Si lo indicas, el gasto y la proyección se ajustan a tu actividad diaria real.',
-          'Optional. If set, expenditure and projection adjust to your actual daily activity.',
+          'Opcional. Los pasos aportan NEAT continua: (pasos/1000) × 0,045 × peso kcal/día; sin escalones, 6200 y 7800 pasos generan gastos distintos y proporcionales.',
+          'Optional. Steps contribute continuous NEAT: (steps/1000) × 0.045 × weight kcal/day; with no steps, 6200 and 7800 steps produce different, proportional expenditure.',
         );
 
   const intakeHint =
     controller.intakeSource === 'manual'
       ? tx(
           lang,
-          `${formatNumber(Math.round(controller.effectiveIntake), lang)} kcal/día manuales. La proyección usa esta media en lugar del objetivo.`,
-          `${formatNumber(Math.round(controller.effectiveIntake), lang)} kcal/day entered manually. The projection uses this average instead of the target.`,
+          `${formatNumber(Math.round(controller.effectiveIntake), lang)} kcal/día manuales. El TEF (10 %) está incluido en el gasto y el balance es ingesta − gasto.`,
+          `${formatNumber(Math.round(controller.effectiveIntake), lang)} kcal/day entered manually. TEF (10%) is included in the expenditure and the balance is intake − expenditure.`,
         )
       : controller.intakeSource === 'logged'
         ? tx(

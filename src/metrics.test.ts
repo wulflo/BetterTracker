@@ -4,6 +4,7 @@ import {
   bodyComposition,
   bodyProgressSeries,
   averageStepsFromEvents,
+  computeEnergyExpenditure,
   computeMacros,
   computeSatiety,
   computeWaterGuidance,
@@ -69,7 +70,7 @@ describe('metrics', () => {
     expect(todayISO(startOfWeek(new Date(2026, 9, 28)))).toBe('2026-10-26');
   });
 
-  it('uses the declared activity level exactly once', () => {
+  it('calcula el gasto energético continuo: BMR, TEF, NEAT y EAT', () => {
     const base = computeMacros(BODY, 30, 'maintain');
     const auto = computeMacros(BODY, 30, 'maintain', 'auto');
     const moderate = computeMacros(BODY, 30, 'maintain', 'moderate');
@@ -78,11 +79,88 @@ describe('metrics', () => {
     expect(auto).not.toBeNull();
     expect(moderate).not.toBeNull();
     expect(high).not.toBeNull();
-    expect(auto!.activity).toBe(base!.activity);
-    expect(auto!.tdee).toBe(base!.tdee);
-    expect(moderate!.activity).toBeCloseTo(1.55, 2);
+    // Identidad del modelo: TDEE = BMR + TEF + NEAT + EAT (aproximación
+    // dada el redondeo de los campos públicos de MacroResult).
+    expect(base!.tdee).toBeCloseTo(base!.bmr + base!.tef + base!.neat + base!.eat, 0);
+    expect(auto!.activity).toBeCloseTo(base!.activity, 5);
+    expect(auto!.tdee).toBeCloseTo(base!.tdee, 1);
+    // Nivel declarado aumenta el gasto base no deportivo (1,15 → 1,38).
     expect(moderate!.tdee).toBeGreaterThan(base!.tdee);
     expect(high!.tdee).toBeGreaterThan(moderate!.tdee);
+    // TEF aparece cuando hay ingesta media; NEAT crece con los pasos.
+    const withIntake = computeMacros(BODY, 30, 'maintain', undefined, 'es', 0, { declaredIntake: 2500 });
+    expect(withIntake!.tef).toBeCloseTo(250, 0);
+    expect(withIntake!.tdee).toBeGreaterThan(base!.tdee);
+    const withSteps = computeMacros(BODY, 30, 'maintain', undefined, 'es', 12000);
+    expect(withSteps!.neat).toBeGreaterThan(base!.neat);
+  });
+
+  it('es sensible al paso diario en el gasto continuo (6200 vs 7800 pasos)', () => {
+    const summary = trainingSummary([], []);
+    const low = computeEnergyExpenditure(BODY, summary, null, 6200, 'sedentary', 0, 'es');
+    const high = computeEnergyExpenditure(BODY, summary, null, 7800, 'sedentary', 0, 'es');
+    // Sin escalones: 6200 y 7800 pasos generan gastos distintos y proporcionales.
+    const expectedLow = 1.15 * low.bmr + (6.2 * 0.045 * 80);
+    const expectedHigh = 1.15 * high.bmr + (7.8 * 0.045 * 80);
+    expect(low.neat).toBeCloseTo(expectedLow, 0);
+    expect(high.neat).toBeCloseTo(expectedHigh, 0);
+    expect(high.tdee).toBeGreaterThan(low.tdee);
+    expect(high.tdee - low.tdee).toBeGreaterThan(0);
+  });
+
+  it('calcula el EAT continuo del entrenamiento con MET netos', () => {
+    const exercises = [event('exercise.upsert', { id: 'sq', name: 'Sentadilla', type: 'fuerza' })];
+    const sessions = [
+      event('session.saved', { id: 's1', date: '2026-01-10', duration: 3600, entries: [{ exerciseId: 'sq', sets: [{ reps: 5, weight: 100 }] }] }),
+      event('session.saved', { id: 's2', date: '2026-01-12', duration: 3600, entries: [{ exerciseId: 'sq', sets: [{ reps: 5, weight: 100 }] }] }),
+    ];
+    const summary = trainingSummary([...exercises, ...sessions], reduceExercises(exercises), new Date(2026, 0, 15));
+    const breakdown = computeEnergyExpenditure(BODY, summary, null, 0, null, 0, 'es');
+    expect(breakdown.eat).toBeGreaterThan(0);
+    expect(breakdown.tdee).toBeCloseTo(breakdown.bmr + breakdown.tef + breakdown.neat + breakdown.eat, 1);
+  });
+
+  it('calcula las ecuaciones militares modernas (Fuchs, Brennen, Boer)', () => {
+    const comp = bodyComposition(BODY);
+    // Fuerza Aérea (Fuchs, 1978): FFM = 80×0,88 + 0,02×33 − 0,55 = 79,33
+    // → 11,86 % de grasa.
+    expect(comp.methods.find((m) => m.id === 'afu-men')!.value).toBeCloseTo(11.86, 1);
+    // Boer (1984): FFM = 0,407×80 + 0,267×180 − 19,2 = 61,42 → 23,22 % de grasa.
+    expect(comp.methods.find((m) => m.id === 'boer')!.value).toBeCloseTo(23.22, 1);
+    // AFU femenina (Brennen, 1979) se activa con antebrazo; sin él no aparece.
+    const female = bodyComposition({ ...BODY, sex: 'female', forearm: 25, wrist: 16 });
+    expect(female.methods.some((m) => m.id === 'afu-women')).toBe(true);
+    expect(bodyComposition({ ...BODY, sex: 'female', forearm: 0 }).methods.some((m) => m.id === 'afu-women')).toBe(false);
+  });
+
+  it('calcula FFMI, la clasificación DoDI 1308.03 y el aviso de masa muscular', () => {
+    const comp = bodyComposition(BODY);
+    // FFMI = masa magra / altura² (DoDI 1308.03); menores de 18,1 son "baja
+    // reserva magra", mayores de 23,0 "hipertrofia alta" en hombres.
+    expect(comp.ffmi).not.toBeNull();
+    expect(comp.ffmi).toBeGreaterThan(10);
+    expect(comp.normalizedFfmi).not.toBeNull();
+    // FFMI normalizado = FFMI + 6,1·(1,8 − altura/100); con altura 180 cm coincide.
+    expect(comp.normalizedFfmi).toBeCloseTo(comp.ffmi!, 5);
+    expect(comp.normalizedFfmi).toBeGreaterThanOrEqual(comp.ffmi! - 0.01);
+    expect(comp.ffmiStatus).toBe('operational');
+    expect(comp.militaryStandard.whtrBand).toBe('optimal');
+    expect(comp.militaryStandard.fatLimit).toBe(26);
+    expect(comp.militaryStandard.fatOk).toBe(true);
+    expect(comp.muscularOverride).toBe(false);
+    // IMC ≥ 25 pero whtr óptimo y grasa dentro del estándar → aviso de masa muscular.
+    expect(bodyComposition({ ...BODY, weight: 95, waist: 40, abdomen: 42, neck: 38 }).muscularOverride).toBe(true);
+  });
+
+  it('resiste una medida atípica en la consenso ponderado', () => {
+    const normal = bodyComposition(BODY);
+    const atypical = bodyComposition({ ...BODY, waist: 200 });
+    expect(atypical.avg).not.toBeNull();
+    expect(atypical.avg as number).toBeGreaterThanOrEqual(1.5);
+    expect(atypical.avg as number).toBeLessThanOrEqual(70);
+    expect(atypical.confidence).not.toBeNull();
+    expect(atypical.methods.length).toBeGreaterThanOrEqual(1);
+    expect(normal.avg).not.toBeNull();
   });
 
   it('applies the selected goal as a calorie deficit or surplus', () => {
@@ -92,18 +170,6 @@ describe('metrics', () => {
     expect(maintain.kcal).toBe(maintain.tdee);
     expect(cut.kcal).toBeLessThan(cut.tdee);
     expect(bulk.kcal).toBeGreaterThan(bulk.tdee);
-  });
-
-  it('uses average daily steps as an activity floor without double counting', () => {
-    const sedentary = computeMacros(BODY, 0, 'maintain', 'sedentary', 'es', 0)!;
-    const walker = computeMacros(BODY, 0, 'maintain', 'sedentary', 'es', 12000)!;
-    const high = computeMacros(BODY, 0, 'maintain', 'high', 'es', 3000)!;
-
-    expect(sedentary.activity).toBeCloseTo(1.2, 2);
-    expect(stepActivityMultiplier(12000)).toBeCloseTo(1.6, 2);
-    expect(walker.activity).toBeCloseTo(1.6, 2);
-    expect(walker.tdee).toBeGreaterThan(sedentary.tdee);
-    expect(high.activity).toBeCloseTo(1.725, 2);
   });
 
   it('reads the latest stored average step count', () => {
@@ -150,6 +216,21 @@ describe('metrics', () => {
     expect(summary.monthSessions).toBe(3);
     expect(summary.monthStrengthSessions).toBe(2);
     expect(summary.strengthPerMonth).toBe(2);
+  });
+
+  it('apila la base no deportiva y los pasos en el gasto continuo', () => {
+    const summary = trainingSummary([], []);
+    const sedentary = computeEnergyExpenditure(BODY, summary, null, 0, 'sedentary', 0, 'es');
+    const walker = computeEnergyExpenditure(BODY, summary, null, 12000, 'sedentary', 0, 'es');
+    const high = computeEnergyExpenditure(BODY, summary, null, 0, 'high', 0, 'es');
+    // La base del nivel de actividad multiplica el BMR dinámico.
+    expect(sedentary.neat).toBeCloseTo(1.15 * sedentary.bmr, 0);
+    // Pasos: 0,045 kcal × kg × pasos/1000 adicionales sin escalones.
+    expect(walker.neat).toBeGreaterThan(sedentary.neat);
+    // Nivel más alto = base más alta, sin sumar dos veces el entrenamiento.
+    expect(high.neat).toBeGreaterThan(sedentary.neat);
+    expect(high.tdee).toBeGreaterThan(sedentary.tdee);
+    expect(stepActivityMultiplier(12000)).toBeCloseTo(1.6, 2);
   });
 
   it('stores training frequency normalized and reads the last manual intake', () => {
@@ -343,6 +424,7 @@ describe('metrics', () => {
     const comp = bodyComposition(BODY);
     const ids = comp.methods.map((method) => method.id);
     expect(ids).toEqual(expect.arrayContaining(['navy', 'army', 'army-2023', 'marine', 'friedl', 'rfm']));
+    expect(ids).toEqual(expect.arrayContaining(['afu-men', 'boer']));
     expect(comp.avg).not.toBeNull();
     expect(comp.avg as number).toBeGreaterThan(5);
     expect(comp.avg as number).toBeLessThan(45);

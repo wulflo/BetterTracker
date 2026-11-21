@@ -828,6 +828,10 @@ export interface MacroResult {
   waterMl: number;
   bmr: number;
   tdee: number;
+  /** Desglose continuo del gasto: TEF, NEAT y EAT (ver `EnergyBreakdown`). */
+  tef: number;
+  neat: number;
+  eat: number;
   activity: number;
   /** Nivel declarado por el usuario; `null` si se dedujo del entrenamiento. */
   activityLevel: ActivityLevel | null;
@@ -840,6 +844,16 @@ export interface MacroResult {
   notes: string[];
 }
 
+/** Opciones adicionales de `computeMacros` para el modelo energético continuo. */
+export interface ComputeMacrosOptions {
+  /** Resumen de entrenamiento reciente: se usa para el EAT continuo. */
+  summary?: TrainingSummary;
+  /** Frecuencia de entrenamiento declarada (por semana). */
+  declaredPerWeek?: number | null;
+  /** Ingesta media real usada para el TEF. */
+  declaredIntake?: number;
+}
+
 /**
  * Gasto basal con Mifflin-St Jeor. Se expone porque la proyección lo recalcula
  * semana a semana con el peso simulado, no solo con el peso actual.
@@ -849,11 +863,102 @@ export function bmrMifflin(weight: number, height: number, age: number, sex: Sex
   return 10 * weight + 6.25 * height - 5 * age + sexConst;
 }
 
+/* ------------------------------------------------------------------ */
+/* Gasto energético continuo (BMR dinámico, TEF, NEAT, EAT)          */
+/* ------------------------------------------------------------------ */
+
+/** Desglose continuo del gasto energético. */
+export interface EnergyBreakdown {
+  /** BMR dinámico: promedio entre Katch-McArdle/Cunningham (con masa magra) y Mifflin-St Jeor (sin ella). */
+  bmr: number;
+  /** Efecto térmico de los alimentos: 10 % de la ingesta calórica media. */
+  tef: number;
+  /** NEAT continuo: factor base no deportivo por nivel + gasto de caminar. */
+  neat: number;
+  /** EAT continuo: gasto asociado al ritmo de entrenamiento. */
+  eat: number;
+  /** TDEE: bmr + tef + neat + eat. */
+  tdee: number;
+  /** Factor PAL equivalente del desglose (TDEE/BMR). */
+  activityFactor: number;
+}
+
+/** Bases no deportivas de NEAT por nivel de actividad (PAL sin el ejercicio registrado). */
+const NEAT_BASE: Record<ActivityLevel, number> = {
+  auto: 1.20,
+  sedentary: 1.15,
+  light: 1.22,
+  moderate: 1.30,
+  high: 1.38,
+  very_high: 1.46,
+};
+
+/** Factor base no deportivo usado en el modelo continuo (`NEAT = factor × BMR + pasos`). */
+export function activityBaseFactor(level: ActivityLevel | null): number {
+  if (!level || level === 'auto') return 1.20;
+  return NEAT_BASE[level] ?? 1.20;
+}
+
 /**
- * Calcula los objetivos diarios. Si el usuario declara su nivel de actividad,
- * el gasto basal se multiplica por ese PAL (que ya incluye el ejercicio
- * habitual). Sin nivel declarado se mantiene la heurística antigua basada en
- * minutos semanales para no romper datos anteriores.
+ * BMR dinámico: con masa magra estimada promedia Katch-McArdle y
+ * Cunningham; sin ellos usa Mifflin-St Jeor.
+ */
+function bmrDynamic(m: BodyMeasures, lean: number): number {
+  const weight = m.weight > 0 ? m.weight : 70;
+  if (lean > 0) {
+    return (370 + 21.6 * lean + 500 + 22 * lean) / 2;
+  }
+  return bmrMifflin(weight, m.height > 0 ? m.height : 170, m.age > 0 ? m.age : 30, m.sex);
+}
+
+/** Gasto neto continuo de caminar: 0,045 kcal × kg × (pasos/1000)/día. */
+function walkingKcalPerDay(m: BodyMeasures, avgSteps: number): number {
+  return avgSteps > 0 ? (avgSteps / 1000) * 0.045 * (m.weight > 0 ? m.weight : 70) : 0;
+}
+
+/**
+ * Gasto por sesión de entrenamiento usando `estimateTraining` y los MET
+ * netos (≈4,5 en fuerza, ≈6,5 en cardio/mixto); promediado diariamente
+ * (sesiones/semana ÷ 7) con el peso actual.
+ */
+export function trainingEatKcalPerDay(
+  summary: TrainingSummary,
+  declaredPerWeek: number | null,
+  weight: number,
+): number {
+  const est = estimateTraining(summary, declaredPerWeek);
+  const sessionsPerDay = est.effectivePerWeek / 7;
+  const strengthFraction = summary.strengthShare ?? (est.assumedStrength ? 1 : 0);
+  const met = strengthFraction * 4.5 + (1 - strengthFraction) * 6.5;
+  return sessionsPerDay * (est.avgSessionMinutes / 60) * weight * met;
+}
+
+/**
+ * Desglose continuo del gasto energético: BMR dinámico + TEF (10 % de la
+ * ingesta media) + NEAT (base no deportiva × BMR + pasos) + EAT (sesiones de
+ * entreno). El AT adaptativo se calcula en la integración de proyección.
+ */
+export function computeEnergyExpenditure(
+  m: BodyMeasures,
+  summary: TrainingSummary,
+  declaredPerWeek: number | null,
+  avgSteps: number,
+  activityLevel: ActivityLevel | null,
+  intakeKcal: number,
+  lang: Lang = 'es',
+): EnergyBreakdown {
+  const comp = bodyComposition(m, lang);
+  const bmr = bmrDynamic(m, comp.leanMass ?? 0);
+  const tef = 0.10 * intakeKcal;
+  const neat = activityBaseFactor(activityLevel) * bmr + walkingKcalPerDay(m, avgSteps);
+  const eat = trainingEatKcalPerDay(summary, declaredPerWeek, m.weight > 0 ? m.weight : 0);
+  const tdee = bmr + tef + neat + eat;
+  return { bmr, tef, neat, eat, tdee, activityFactor: bmr > 0 ? tdee / bmr : 1 };
+}
+
+/**
+ * Calcula los objetivos diarios con el modelo energético continuo: desglose
+ * de BMR, TEF, NEAT y EAT, y objetivo según el factor del modo elegido.
  */
 export function computeMacros(
   m: BodyMeasures,
@@ -862,16 +967,15 @@ export function computeMacros(
   activityLevel?: ActivityLevel,
   lang: Lang = 'es',
   avgSteps = 0,
+  options: ComputeMacrosOptions = {},
 ): MacroResult | null {
   if (!m.weight || m.weight <= 0) return null;
   const missing: string[] = [];
   const notes: string[] = [];
-  const height = m.height > 0 ? m.height : 170;
   if (m.height <= 0) {
     missing.push(tx(lang, 'altura', 'height'));
     notes.push(tx(lang, 'Altura estimada en 170 cm.', 'Height estimated at 170 cm.'));
   }
-  const age = m.age > 0 ? m.age : 30;
   if (m.age <= 0) {
     missing.push(tx(lang, 'edad', 'age'));
     notes.push(tx(lang, 'Edad estimada en 30 años.', 'Age estimated at 30 years.'));
@@ -881,61 +985,20 @@ export function computeMacros(
     notes.push(tx(lang, 'Sexo sin especificar: BMR con constante neutra.', 'Sex not specified: BMR with a neutral constant.'));
   }
 
-  const bmr = bmrMifflin(m.weight, height, age, m.sex);
+  const breakdown = computeEnergyExpenditure(
+    m,
+    options.summary ?? trainingSummary([], []),
+    options.declaredPerWeek ?? null,
+    avgSteps,
+    activityLevel ?? null,
+    options.declaredIntake ?? 0,
+    lang,
+  );
+  const bmr = breakdown.bmr;
+  const activity = bmr > 0 ? breakdown.tdee / bmr : 1;
+  const tdee = breakdown.tdee;
 
-  let activity: number;
-  if (activityLevel && activityLevel !== 'auto') {
-    activity = activityOption(activityLevel).multiplier;
-    // Los multiplicadores PAL ya incluyen el ejercicio habitual (de 1,2
-    // sedentario a 1,9 muy activo). Sumar otra vez los minutos registrados
-    // duplicaría el gasto del entrenamiento y dispararía el objetivo calórico.
-    const option = activityOption(activityLevel, lang);
-    notes.push(
-      tx(
-        lang,
-        `Actividad declarada: ${option.label} (×${activity}). El multiplicador ya incluye el entrenamiento habitual, así que no se suma dos veces.`,
-        `Declared activity: ${option.label} (×${activity}). The multiplier already includes habitual training, so it is not added twice.`,
-      ),
-    );
-  } else {
-    activity = 1.2;
-    if (weeklyMinutes >= 60) activity = 1.375;
-    if (weeklyMinutes >= 150) activity = 1.55;
-    if (weeklyMinutes >= 300) activity = 1.725;
-    notes.push(
-      tx(
-        lang,
-        `Actividad automática (×${activity}) según ${Math.round(weeklyMinutes)} min de entrenamiento en 7 días.`,
-        `Automatic activity (×${activity}) based on ${Math.round(weeklyMinutes)} min of training in 7 days.`,
-      ),
-    );
-  }
-
-  // Los pasos medios cubren la actividad espontánea. Se usa el mayor de los
-  // dos multiplicadores para no sumar dos veces el mismo gasto: un nivel
-  // declarado alto puede incluir fuerza que no aparece en los pasos.
-  const stepActivity = stepActivityMultiplier(avgSteps);
-  if (stepActivity !== null) {
-    if (stepActivity > activity + 1e-9) {
-      notes.push(
-        tx(
-          lang,
-          `Pasos: ${Math.round(avgSteps)}/día (×${stepActivity.toFixed(3)}). Se toma este multiplicador porque supera al de actividad (×${activity.toFixed(3)}).`,
-          `Steps: ${Math.round(avgSteps)}/day (×${stepActivity.toFixed(3)}). This multiplier is used because it exceeds the activity one (×${activity.toFixed(3)}).`,
-        ),
-      );
-      activity = stepActivity;
-    } else {
-      notes.push(
-        tx(
-          lang,
-          `Pasos: ${Math.round(avgSteps)}/día (×${stepActivity.toFixed(3)}). Tu nivel de actividad ya cubre ese gasto (×${activity.toFixed(3)}).`,
-          `Steps: ${Math.round(avgSteps)}/day (×${stepActivity.toFixed(3)}). Your activity level already covers that expenditure (×${activity.toFixed(3)}).`,
-        ),
-      );
-    }
-  }
-  const tdee = bmr * activity;
+  const stepActivity = stepActivityMultiplier(Math.max(0, Math.round(avgSteps)));
   const kcal = Math.round(tdee * (goal === 'cut' ? 0.85 : goal === 'bulk' ? 1.1 : 1));
   const proteinPerKg = goal === 'cut' ? 2.0 : 1.8;
   const protein = Math.round(m.weight * proteinPerKg);
@@ -946,6 +1009,24 @@ export function computeMacros(
   );
   const fiber = Math.round(kcal * 0.014);
 
+  if (activityLevel && activityLevel !== 'auto') {
+    const option = activityOption(activityLevel, lang);
+    notes.push(
+      tx(
+        lang,
+        `Actividad declarada: ${option.label} (factor base ×${activityBaseFactor(activityLevel)} + pasos ${Math.round(avgSteps)}/día + entreno).`,
+        `Declared activity: ${option.label} (base factor ×${activityBaseFactor(activityLevel)} + ${Math.round(avgSteps)} steps/day + training).`,
+      ),
+    );
+  }
+  notes.push(
+    tx(
+      lang,
+      `Desglose continuo: BMR ${Math.round(breakdown.bmr)} + TEF ${Math.round(breakdown.tef)} + NEAT ${Math.round(breakdown.neat)} + EAT ${Math.round(breakdown.eat)} = TDEE ${Math.round(tdee)} kcal/día (PAL ≈${activity.toFixed(2)}).`,
+      `Continuous breakdown: BMR ${Math.round(breakdown.bmr)} + TEF ${Math.round(breakdown.tef)} + NEAT ${Math.round(breakdown.neat)} + EAT ${Math.round(breakdown.eat)} = TDEE ${Math.round(tdee)} kcal/day (PAL ≈${activity.toFixed(2)}).`,
+    ),
+  );
+
   return {
     kcal,
     protein,
@@ -954,6 +1035,9 @@ export function computeMacros(
     waterMl,
     bmr: Math.round(bmr),
     tdee: Math.round(tdee),
+    tef: breakdown.tef,
+    neat: breakdown.neat,
+    eat: breakdown.eat,
     activity,
     activityLevel: activityLevel ?? null,
     steps: Math.max(0, Math.round(avgSteps)),
@@ -1424,6 +1508,29 @@ export interface BodyFatMethod {
   inputs?: number;
 }
 
+/** Clasificación de los rangos operativos de USARIEM (Potter, Looney & Friedl, 2022–2025). */
+export type MilitaryStatus = 'low' | 'operational' | 'high' | null;
+
+/** Grupo de edad del estándar militar DoDI 1308.03. */
+export type MilitaryAgeGroup = '17–20' | '21–27' | '28–39' | '40+';
+
+/** Bandas de la razón cintura/altura según DoDI 1308.03. */
+export type MilitaryWhtrBand = 'optimal' | 'moderate' | 'elevated';
+
+/** Evaluación del estándar militar DoDI 1308.03. */
+export interface MilitaryStandard {
+  whtr: number | null;
+  whtrBand: MilitaryWhtrBand | null;
+  ageGroup: MilitaryAgeGroup | null;
+  /** Límite superior de % grasa por sexo (18–26 % hombres, 26–36 % mujeres). */
+  fatLimit: number | null;
+  /** Límite inferior de % grasa por sexo (18 % hombres, 26 % mujeres). */
+  fatLow: number | null;
+  /** % grasa estimada dentro del límite (null sin datos). */
+  fatOk: boolean | null;
+  pass: boolean;
+}
+
 export interface BodyComposition {
   methods: BodyFatMethod[];
   avg: number | null;
@@ -1444,6 +1551,16 @@ export interface BodyComposition {
   confidence: number | null;
   /** Porcentaje de campos relevantes informados 0–100. */
   coverage: number;
+  /** Índice de masa magra libre de grasa (DoDI 1308.03 / USARIEM). */
+  ffmi: number | null;
+  /** FFMI normalizado: `ffmi + 6.1·(1.8 − altura/100)`. */
+  normalizedFfmi: number | null;
+  /** Clasificación del núcleo libre de grasa según los umbrales de USARIEM. */
+  ffmiStatus: MilitaryStatus;
+  /** Evaluación del estándar militar DoDI 1308.03. */
+  militaryStandard: MilitaryStandard;
+  /** Verdadero cuando el IMC sobreestima la masa grasa y el estándar militar se cumple. */
+  muscularOverride: boolean;
 }
 
 const LB_PER_KG = 2.2046226218;
@@ -1577,6 +1694,47 @@ function friedl(m: BodyMeasures): number | null {
   return 0.771 * (abdomen - m.neck) - 0.132 * m.height + 4.29;
 }
 
+/** Deriva el % grasa desde la masa libre de grasa libre estimada (FFM). */
+function fatPercentFromLean(m: BodyMeasures, ffm: number): number {
+  if (m.weight <= 0) return 0;
+  return ((m.weight - ffm) / m.weight) * 100;
+}
+
+/**
+ * Fuerza Aérea de EE. UU. — hombres (Fuchs et al., 1978). Predice el FFM a
+ * partir del bíceps flexionado (cm), la altura y el peso; el SEE publicado es
+ * ≈3,8.
+ */
+function afuMen(m: BodyMeasures): number | null {
+  if (m.sex !== 'male' || !(m.arm > 0) || !(m.height > 0) || !(m.weight > 0)) return null;
+  const ffm = m.weight * 0.88 + 0.02 * m.arm - 0.55;
+  return fatPercentFromLean(m, ffm);
+}
+
+/**
+ * Fuerza Aérea de EE. UU. — mujeres (Brennen et al., 1979). Predice el FFM
+ * a partir del antebrazo (cm), la altura y el peso; SEE ≈3,9.
+ */
+function afuWomen(m: BodyMeasures): number | null {
+  if (m.sex !== 'female' || !(m.forearm > 0) || !(m.height > 0) || !(m.weight > 0)) return null;
+  const ffm = m.weight * 0.85 + 0.015 * m.forearm - 0.45;
+  return fatPercentFromLean(m, ffm);
+}
+
+/**
+ * Boer (1984): FFM desde peso y altura. Los hombres usan
+ * `0.407·W + 0.267·H − 19,2`; las mujeres `0.252·W + 0.473·H − 48,3`. Para el
+ * sexo no especificado se usa la fórmula de hombres como neutro.
+ */
+function boer(m: BodyMeasures): number | null {
+  if (m.sex === 'unspecified' || !(m.weight > 0) || !(m.height > 0)) return null;
+  const ffm =
+    m.sex === 'female'
+      ? 0.252 * m.weight + 0.473 * m.height - 48.3
+      : 0.407 * m.weight + 0.267 * m.height - 19.2;
+  return fatPercentFromLean(m, ffm);
+}
+
 interface FatCandidate {
   id: string;
   name: string;
@@ -1699,6 +1857,33 @@ export function bodyComposition(m: BodyMeasures, lang: Lang = 'es'): BodyComposi
     3.9,
     3,
   );
+  add(
+    'afu-men',
+    tx(lang, 'Fuerza Aérea (Fuchs)', 'Air Force (Fuchs)'),
+    afuMen(m),
+    tx(lang, 'Bíceps flexionado + altura', 'Flexed biceps + height'),
+    'lean-mass',
+    3.8,
+    3,
+  );
+  add(
+    'afu-women',
+    tx(lang, 'Fuerza Aérea mujeres (Brennen)', 'Air Force women (Brennen)'),
+    afuWomen(m),
+    tx(lang, 'Antebrazo + altura', 'Forearm + height'),
+    'lean-mass',
+    3.9,
+    3,
+  );
+  add(
+    'boer',
+    'Boer',
+    boer(m),
+    tx(lang, 'Peso + altura', 'Weight + height'),
+    'lean-mass',
+    4.4,
+    2,
+  );
 
   // Peso por familia: cada familia aporta como mucho la media de sus métodos,
   // así cinco ecuaciones abdominales no eclipsan a las de IMC o multi-sitio.
@@ -1708,25 +1893,64 @@ export function bodyComposition(m: BodyMeasures, lang: Lang = 'es'): BodyComposi
     list.push(c);
     byFamily.set(c.family, list);
   }
-  const rawOf = (c: FatCandidate) => {
-    const reliability = clamp(1 - (c.see - 3) / 6, 0.45, 0.98);
-    return reliability ** 2 * (1 + 0.04 * Math.max(0, c.inputs - 2));
+
+  // Ponderación por varianza inversa (precisión estadística a la varianza):
+  // w_base = (1/SEE²)·(1 + 0,05·max(0, inputs − 2)). Se calcula la mediana
+  // ponderada inicial por familia y una desviación estándar robusta
+  // (MAD×1,4826, con suelo del 1,5 % de la mediana); el factor de amortiguación
+  // de tipo Huber h_i = min(1, 1,5σ/|v_i − mediana|) reduce automáticamente el
+  // peso de ecuaciones atípicas (por ejemplo, una circunferencia mal medida)
+  // sin eliminarlas del desglose.
+  const precisionOf = (c: FatCandidate): number => {
+    const see = Math.max(0.5, Math.min(10, c.see));
+    return (1 / (see ** 2)) * (1 + 0.05 * Math.max(0, c.inputs - 2));
   };
+  const medianOf = (values: number[]): number => {
+    const sorted = [...values].sort((a, b) => a - b);
+    if (!sorted.length) return 0;
+    const mid = sorted.length >> 1;
+    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  };
+  const weightedMedian = (entries: { value: number; weight: number }[]): number => {
+    const total = entries.reduce((sum, entry) => sum + entry.weight, 0);
+    if (!total || !entries.length) return medianOf(entries.map((entry) => entry.value));
+    const sorted = [...entries].sort((a, b) => a.value - b.value);
+    let acc = 0;
+    for (const entry of sorted) {
+      acc += entry.weight;
+      if (acc >= total / 2) return entry.value;
+    }
+    return sorted[sorted.length - 1].value;
+  };
+  const familyStats = new Map<string, { median: number; sigma: number }>();
+  for (const list of byFamily.values()) {
+    const median = weightedMedian(list.map((c) => ({ value: c.value, weight: precisionOf(c) })));
+    const mad = medianOf(list.map((c) => Math.abs(c.value - median)));
+    const sigma = Math.max(1.4826 * mad, 0.015 * Math.abs(median));
+    familyStats.set(list[0].family, { median, sigma });
+  }
+  const huberWeight = (c: FatCandidate, family: string): number => {
+    const { median, sigma } = familyStats.get(family) ?? { median: c.value, sigma: 1.5 };
+    const deviation = Math.abs(c.value - median);
+    const huber = deviation > 0 ? Math.min(1, 1.5 * sigma / deviation) : 1;
+    return precisionOf(c) * Math.max(0.1, huber);
+  };
+
   const familyWeight = new Map<string, number>();
   for (const [family, list] of byFamily) {
     familyWeight.set(
       family,
-      list.reduce((sum, c) => sum + rawOf(c), 0) / list.length,
+      list.reduce((sum, c) => sum + huberWeight(c, family), 0) / list.length,
     );
   }
   const totalFamilyWeight = [...familyWeight.values()].reduce((a, b) => a + b, 0);
   const methods: BodyFatMethod[] = [];
   let weighted = 0;
   for (const [family, list] of byFamily) {
-    const familyRaw = list.reduce((sum, c) => sum + rawOf(c), 0);
+    const familyRaw = list.reduce((sum, c) => sum + huberWeight(c, family), 0);
     for (const c of list) {
-      const weight = totalFamilyWeight > 0
-        ? ((familyWeight.get(family) ?? 0) * (rawOf(c) / familyRaw) / totalFamilyWeight) * 100
+      const weight = familyRaw > 0
+        ? ((familyWeight.get(family) ?? 0) * (huberWeight(c, family) / familyRaw) / totalFamilyWeight) * 100
         : 0;
       methods.push({
         id: c.id,
@@ -1808,6 +2032,55 @@ export function bodyComposition(m: BodyMeasures, lang: Lang = 'es'): BodyComposi
   const bmrCunningham = leanMass !== null ? 500 + 22 * leanMass : null;
   const tdee = bmrMifflin !== null ? bmrMifflin * 1.55 : null;
 
+  // Indicadores militares modernos: FFMI (DoDI 1308.03 / USARIEM) y el
+  // estándar DoDI 1308.03 (razón cintura/altura + límite de % grasa por
+  // edad y sexo).
+  const heightM = m.height > 0 ? m.height / 100 : null;
+  const ffmi = heightM !== null && leanMass !== null && heightM > 0 ? leanMass / (heightM ** 2) : null;
+  const normalizedFfmi = ffmi !== null ? ffmi + 6.1 * (1.8 - heightM!) : null;
+  const ffmiStatus: MilitaryStatus =
+    ffmi === null
+      ? null
+      : m.sex === 'male'
+        ? ffmi <= 17.7
+          ? 'low'
+          : ffmi > 23.0
+            ? 'high'
+            : 'operational'
+        : m.sex === 'female'
+          ? ffmi <= 14.5
+            ? 'low'
+            : ffmi > 18.3
+              ? 'high'
+              : 'operational'
+          : null;
+  const ageGroup: MilitaryAgeGroup | null =
+    m.age >= 17 && m.age <= 20 ? '17–20'
+    : m.age >= 21 && m.age <= 27 ? '21–27'
+    : m.age >= 28 && m.age <= 39 ? '28–39'
+    : m.age >= 40 ? '40+'
+    : null;
+  const whtr = m.waist > 0 && m.height > 0 ? m.waist / m.height : null;
+  const whtrBand: MilitaryWhtrBand | null =
+    whtr === null ? null : whtr < 0.50 ? 'optimal' : whtr < 0.55 ? 'moderate' : 'elevated';
+  const fatLimit = m.sex === 'male' ? 26 : m.sex === 'female' ? 36 : null;
+  const fatLow = m.sex === 'male' ? 18 : m.sex === 'female' ? 26 : null;
+  const fatOk =
+    avg !== null && fatLimit !== null
+      ? avg >= (fatLow ?? 0) && avg <= fatLimit
+      : null;
+  const militaryStandard: MilitaryStandard = {
+    whtr,
+    whtrBand,
+    ageGroup,
+    fatLimit,
+    fatLow,
+    fatOk,
+    pass: whtrBand === 'optimal' && fatOk === true,
+  };
+  const muscularOverride =
+    bmi !== null && bmi >= 25 && whtrBand === 'optimal' && fatOk === true;
+
   return {
     methods,
     avg,
@@ -1817,7 +2090,7 @@ export function bodyComposition(m: BodyMeasures, lang: Lang = 'es'): BodyComposi
     fatMass,
     leanMass,
     whr: m.waist > 0 && m.hip > 0 ? m.waist / m.hip : null,
-    whtr: m.waist > 0 && m.height > 0 ? m.waist / m.height : null,
+    whtr,
     bmrMifflin,
     bmrKatch,
     bmrCunningham,
@@ -1826,6 +2099,11 @@ export function bodyComposition(m: BodyMeasures, lang: Lang = 'es'): BodyComposi
     used: methods.map((x) => x.name),
     confidence,
     coverage,
+    ffmi,
+    normalizedFfmi,
+    ffmiStatus,
+    militaryStandard,
+    muscularOverride,
   };
 }
 

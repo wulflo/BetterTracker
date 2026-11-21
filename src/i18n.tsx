@@ -77,10 +77,11 @@ const Ctx = createContext<LanguageCtx>({ lang: 'es', setLang: () => {} });
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [lang, setLangState] = useState<Lang>(() => {
     try {
+      // Por defecto, al instalar la app, está en inglés; se puede cambiar a español.
       const v = localStorage.getItem(STORAGE_KEY);
-      return v === 'en' ? 'en' : 'es';
+      return v === 'es' ? 'es' : 'en';
     } catch {
-      return 'es';
+      return 'en';
     }
   });
   useEffect(() => {

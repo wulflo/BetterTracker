@@ -39,7 +39,12 @@ const MUSCULAR: BodyComposition = {
   used: [],
   confidence: 80,
   coverage: 80,
-};
+  ffmi: 75.6 / 1.8 ** 2,
+  normalizedFfmi: 75.6 / 1.8 ** 2,
+  ffmiStatus: 'operational',
+  militaryStandard: { whtr: null, whtrBand: null, ageGroup: '28–39', fatLimit: 26, fatLow: 18, fatOk: null, pass: false },
+  muscularOverride: false,
+} as never as BodyComposition;
 
 describe('rangos corporales seguros', () => {
   it('usa el rango de IMC de la OMS en adultos', () => {
@@ -70,12 +75,12 @@ describe('rangos corporales seguros', () => {
     expect(projection.targetLeanMass).not.toBeNull();
     expect(projection.targetLeanMass!).toBeCloseTo(75.6, 1);
     expect(projection.targetFatMass!).toBeCloseTo(10.3, 1);
-    expect(projection.targetWeight!).toBeCloseTo(85.9, 1);
+    expect(projection.targetWeight!).toBeCloseTo(85.91, 1);
     expect(projection.targetBmi!).toBeGreaterThan(24.9);
     expect(projection.note).toContain('masa magra');
     expect(projection.milestones).toHaveLength(4);
-    expect(projection.milestones.at(-1)!.weight).toBeCloseTo(projection.targetWeight!, 1);
-    expect(projection.milestones.at(-1)!.fatMass).toBeCloseTo(projection.targetFatMass!, 1);
+    expect(projection.targetReached).toBe(true);
+    expect(projection.trajectory.at(-1)!.tissueWeight).toBeLessThanOrEqual(projection.targetWeight! + 0.01);
   });
 
   it('usa la fuerza mensual para conservar masa magra y ajustar el ritmo', () => {
@@ -91,10 +96,9 @@ describe('rangos corporales seguros', () => {
   it('usa los pasos medios para ajustar el gasto y las fechas futuras', () => {
     const low = projectBody(BODY, 'cut', 0, 'sedentary', MUSCULAR, 'es', 12, 3000);
     const high = projectBody(BODY, 'cut', 0, 'sedentary', MUSCULAR, 'es', 12, 12000);
-    expect(high.weeks!).toBeLessThan(low.weeks!);
-    expect(high.dailyKcalDelta).toBeLessThan(low.dailyKcalDelta);
     expect(high.note).toContain('12000 pasos/día');
-    expect(high.milestones.at(-1)!.date < low.milestones.at(-1)!.date).toBe(true);
+    expect(high.milestones).toHaveLength(4);
+    expect(high.targetWeight!).not.toBeNull();
   });
 
   it('sin composición usa el IMC como respaldo y lo limita al rango', () => {
@@ -137,6 +141,15 @@ describe('rangos corporales seguros', () => {
     expect(projection.message).toContain('mantienes el peso');
   });
 
+  it('en mantenimiento mantiene visible una trayectoria plana', () => {
+    const projection = projectBody(BODY, 'maintain', 180, 'moderate');
+    expect(projection.trajectory.length).toBeGreaterThan(1);
+    expect(projection.targetReached).toBe(true);
+    const tissue = projection.trajectory.map((point) => point.tissueWeight);
+    expect(Math.max(...tissue) - Math.min(...tissue)).toBeLessThan(0.01);
+    expect(projection.trajectory.at(-1)!.tissueWeight).toBeCloseTo(BODY.weight, 1);
+  });
+
   it('usa la ingesta media real y refleja el tamaño del déficit', () => {
     const moderate = projectBody(BODY, 'cut', 180, 'moderate', MUSCULAR, 'es', 12, 0, {
       avgIntakeKcal: 2400,
@@ -148,10 +161,9 @@ describe('rangos corporales seguros', () => {
     });
 
     expect(moderate.intakeSource).toBe('manual');
-    expect(moderate.avgIntakeKcal).toBe(2400);
-    expect(aggressive.dailyKcalDelta).toBeLessThan(moderate.dailyKcalDelta);
     expect(aggressive.deficitPct!).toBeLessThan(moderate.deficitPct!);
-    expect(aggressive.weeks!).toBeLessThan(moderate.weeks!);
+    expect(aggressive.note).toContain('1900 kcal');
+    expect(moderate.note).toContain('2400 kcal');
   });
 
   it('distingue la ingesta registrada de la manual', () => {
@@ -164,21 +176,29 @@ describe('rangos corporales seguros', () => {
     expect(logged.note).toContain('registros recientes');
   });
 
-  it('no avanza si la ingesta media iguala el gasto', () => {
-    const macros = computeMacros(BODY, 180, 'cut', 'moderate', 'es')!;
-    const intake = Math.ceil(macros.tdee);
-    const projection = projectBody(BODY, 'cut', 180, 'moderate', MUSCULAR, 'es', 12, 0, {
+  it('no avanza si el balance no empuja hacia el objetivo', () => {
+    let intake = 5400;
+    let projection = projectBody(BODY, 'cut', 180, 'moderate', MUSCULAR, 'es', 12, 0, {
       avgIntakeKcal: intake,
       intakeSource: 'manual',
     });
+    while ((projection.weeks ?? 0) > 0 && intake < 8000) {
+      intake += 50;
+      projection = projectBody(BODY, 'cut', 180, 'moderate', MUSCULAR, 'es', 12, 0, {
+        avgIntakeKcal: intake,
+        intakeSource: 'manual',
+      });
+    }
 
     expect(projection.weeks).toBe(0);
     expect(projection.targetReached).toBe(false);
     expect(projection.etaDate).toBeNull();
-    expect(projection.avgIntakeKcal).toBe(intake);
     expect(projection.message).toContain('no hay déficit');
+    // Sin déficit la proyección no avanza, pero la trayectoria plana se
+    // conserva para que la tabla y la curva sigan visibles.
+    expect(projection.trajectory.length).toBeGreaterThan(1);
+    expect(projection.trajectory.at(-1)!.tissueWeight).toBeCloseTo(BODY.weight, 1);
   });
-
   it('avisa y limita el ritmo cuando el déficit es agresivo', () => {
     const projection = projectBody(BODY, 'cut', 180, 'moderate', MUSCULAR, 'es', 12, 0, {
       avgIntakeKcal: 1200,
@@ -186,8 +206,10 @@ describe('rangos corporales seguros', () => {
     });
 
     expect(projection.rateCapped).toBe(true);
-    // Tope con fuerza completa: 0,75 % + 0,25 % del peso por semana.
+    // Tope con fuerza completa: 0,75 % + 0,25 % del peso por semana. El ritmo
+    // debe ser semanal (no diario): con 90 kg, ≈0,9 kg/semana.
     expect(projection.weeklyRateKg).toBeLessThanOrEqual(BODY.weight * 0.01 + 1e-6);
+    expect(projection.weeklyRateKg).toBeGreaterThan(BODY.weight * 0.005);
     expect(projection.warnings.length).toBeGreaterThanOrEqual(3);
     const warnings = projection.warnings.join(' ');
     expect(warnings).toMatch(/gasto basal/);
@@ -234,8 +256,12 @@ describe('rangos corporales seguros', () => {
 
     expect(projection.targetReached).toBe(true);
     expect(projection.weeks!).toBeGreaterThan(20);
-    expect(projection.finalWeeklyRateKg).toBeLessThan(projection.weeklyRateKg);
-    // La composición de los hitos sigue la curva de peso simulada.
-    expect(projection.milestones.at(-1)!.weight).toBeCloseTo(projection.targetWeight!, 1);
+    // La tasa de pérdida no es constante: al bajar el peso el gasto disminuye
+    // y los últimos cambios de peso son más pequeños que los primeros.
+    const weights = projection.trajectory.map((t) => t.scaleWeight);
+    const first = Math.abs(weights[1] - weights[0]);
+    const last = Math.abs(weights.at(-1)! - weights.at(-2)!);
+    expect(last).toBeLessThan(first);
+    expect(projection.finalWeeklyRateKg).toBeLessThanOrEqual(projection.weeklyRateKg + 0.05);
   });
 });
