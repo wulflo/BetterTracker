@@ -1,7 +1,7 @@
 /**
  * Tauri rechaza comandos con objetos (`{ message, code, data }`) que `String()`
  * convierte en `[object Object]`. Este helper conserva el mensaje real para que
- * los avisos de cámara, permisos y bóveda sean útiles.
+ * los avisos de permisos, red y bóveda sean útiles.
  */
 export function errorText(error: unknown): string {
   if (error == null) return 'Error desconocido';

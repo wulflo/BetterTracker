@@ -4,7 +4,7 @@
  * Se genera con `node scripts/generate-barcode-catalog.mjs` a partir del export
  * mini de Open Food Facts. Solo contiene código, nombre y categoría; los macros
  * se aproximan por categoría y se marcan como estimación. El catálogo se carga
- * de forma diferida la primera vez que se escanea un código, así no pesa en el
+ * de forma diferida la primera vez que se busca un código, así no pesa en el
  * arranque de la app ni en el primer render del Panel.
  *
  * Orden de búsqueda recomendado:

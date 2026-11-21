@@ -737,8 +737,8 @@ export default function App() {
                 <span className="value small">
                   {tx(
                     lang,
-                    'Escanea desde Panel → Ingesta → Escanear código',
-                    'Scan from Dashboard → Intake → Scan code',
+                    'Se escribe o pega en Panel → Ingesta',
+                    'Type or paste it in Dashboard → Intake',
                   )}
                 </span>
               </div>
@@ -937,8 +937,8 @@ export default function App() {
                   <span className="mono">omega</span>
                   {tx(
                     lang,
-                    '. Las copias longlife son una red de seguridad local; no se exportan ni se envían a ningún servidor. Las únicas conexiones de red son la comprobación manual de actualizaciones y la consulta opcional a Open Food Facts al escanear un código.',
-                    '. Longlife backups are a local safety net; they are not exported or sent to any server. The only network connections are the manual update check and the optional Open Food Facts lookup when scanning a barcode.',
+                    '. Las copias longlife son una red de seguridad local; no se exportan ni se envían a ningún servidor. Las únicas conexiones de red son la comprobación manual de actualizaciones y la consulta opcional a Open Food Facts al buscar un código de barras.',
+                    '. Longlife backups are a local safety net; they are not exported or sent to any server. The only network connections are the manual update check and the optional Open Food Facts lookup when looking up a barcode.',
                   )}
                 </span>
               </div>

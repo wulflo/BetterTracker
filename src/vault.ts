@@ -244,7 +244,7 @@ async function lookupBarcodeWeb(barcode: string): Promise<BarcodeProduct | null>
   return null;
 }
 
-async function fetchProductForBarcode(barcode: string, scanned: string): Promise<BarcodeProduct | null> {
+async function fetchProductForBarcode(barcode: string, enteredCode: string): Promise<BarcodeProduct | null> {
   const fields = 'product_name,product_name_es,generic_name,brands,nutriments,categories_tags,quantity,serving_size';
   const response = await fetch(`https://world.openfoodfacts.org/api/v2/product/${barcode}.json?fields=${fields}`);
   if (response.status === 404) return null;
@@ -273,13 +273,13 @@ async function fetchProductForBarcode(barcode: string, scanned: string): Promise
     ? product.categories_tags.map((tag: unknown) => String(tag).toLowerCase())
     : [];
   return {
-    id: `off-${scanned}`,
+    id: `off-${enteredCode}`,
     name: brand && !name.toLowerCase().includes(brand.toLowerCase()) ? `${name} (${brand})` : name,
     category: categoryFromTags(tags),
     per100,
     units: {},
     custom: true,
-    barcode: scanned,
+    barcode: enteredCode,
     source: 'openfoodfacts',
     quantityLabel: product.quantity ? String(product.quantity) : null,
     servingLabel: product.serving_size ? String(product.serving_size) : null,

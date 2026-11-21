@@ -275,7 +275,7 @@ mod tests {
     }
 
     #[test]
-    fn keeps_the_scanned_code_in_the_product() {
+    fn keeps_the_entered_code_in_the_product() {
         let product = json!({
             "product_name": "Producto",
             "brands": "Marca",

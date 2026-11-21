@@ -61,7 +61,7 @@ export default function FoodLog({ foods, items, onAdd, onUpdate, onRemove, onCle
   const [barcodeBusy, setBarcodeBusy] = useState(false);
   const [barcodeError, setBarcodeError] = useState('');
   const [barcodeNotice, setBarcodeNotice] = useState<string | null>(null);
-  const [scannedFood, setScannedFood] = useState<Food | null>(null);
+  const [lookupFood, setLookupFood] = useState<Food | null>(null);
   const [checksumHold, setChecksumHold] = useState<string | null>(null);
   const [custom, setCustom] = useState({
     name: '',
@@ -76,7 +76,7 @@ export default function FoodLog({ foods, items, onAdd, onUpdate, onRemove, onCle
   });
 
   const selected = foods.find((food) => food.id === selectedId)
-    ?? (scannedFood?.id === selectedId ? scannedFood : null);
+    ?? (lookupFood?.id === selectedId ? lookupFood : null);
   const units = selected ? foodUnits(selected) : ['g'];
   const preview = selected ? calcFood(selected, quantity, unit) : null;
   const totals = mealTotals(items);
@@ -84,7 +84,7 @@ export default function FoodLog({ foods, items, onAdd, onUpdate, onRemove, onCle
 
   const foodFor = (item: FoodLogItem): Food | undefined =>
     foods.find((food) => food.id === item.foodId)
-    ?? (scannedFood?.id === item.foodId ? scannedFood : undefined);
+    ?? (lookupFood?.id === item.foodId ? lookupFood : undefined);
 
   const displayName = (food: Food): string => localizedFoodName(food, lang);
   const displayItemName = (item: FoodLogItem): string => {
@@ -94,14 +94,14 @@ export default function FoodLog({ foods, items, onAdd, onUpdate, onRemove, onCle
 
   useEffect(() => {
     if (foods.some((food) => food.id === selectedId)) return;
-    if (scannedFood && scannedFood.id === selectedId) return;
+    if (lookupFood && lookupFood.id === selectedId) return;
     const first = foods[0];
     if (first) {
       setSelectedId(first.id);
       setUnit(preferredUnit(first));
       setQuantity(defaultQuantity(preferredUnit(first)));
     }
-  }, [foods, selectedId, scannedFood]);
+  }, [foods, selectedId, lookupFood]);
 
   const chooseFood = (food: Food) => {
     setSelectedId(food.id);
@@ -168,7 +168,7 @@ export default function FoodLog({ foods, items, onAdd, onUpdate, onRemove, onCle
       // una aproximación por categoría, así que se avisa en el resultado.
       const catalogFood = await lookupBarcodeCatalog(code);
       if (catalogFood) {
-        setScannedFood(catalogFood);
+        setLookupFood(catalogFood);
         await onCreateFood(catalogFood);
         chooseFood(catalogFood);
         setBarcodeNotice(
@@ -187,7 +187,7 @@ export default function FoodLog({ foods, items, onAdd, onUpdate, onRemove, onCle
       );
       const product = await lookupBarcode(code);
       if (product) {
-        setScannedFood(product);
+        setLookupFood(product);
         await onCreateFood(product);
         chooseFood(product);
         setBarcodeNotice(
@@ -306,7 +306,7 @@ export default function FoodLog({ foods, items, onAdd, onUpdate, onRemove, onCle
         source: 'manual',
       };
       await onCreateFood(food);
-      setScannedFood(food);
+      setLookupFood(food);
       setSelectedId(food.id);
       setUnit(preferredUnit(food));
       setQuantity(defaultQuantity(preferredUnit(food)));

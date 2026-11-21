@@ -1,6 +1,6 @@
 [package]
 name = "better-tracker"
-version = "0.9.19"
+version = "0.9.20"
 description = "Better Fitness Tracker"
 authors = ["better-tracker"]
 license = "MIT"
@@ -30,7 +30,7 @@ minisign-verify = "0.3"
 # rustls-platform-verifier, que exige inicialización JNI manual
 # (`android::init_with_env`) que Tauri no hace; al construir el cliente entra en
 # panic y, con `panic = "abort"`, cierra la aplicación al comprobar
-# actualizaciones o al buscar el producto de un código escaneado. reqwest 0.12
+# actualizaciones o al buscar el producto de un código de barras. reqwest 0.12
 # con `rustls-tls-webpki-roots` no depende de ese verificador y funciona igual en
 # escritorio (GitHub y Open Food Facts usan ISRG/DigiCert, incluidas en las
 # raíces webpki).

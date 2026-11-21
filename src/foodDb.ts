@@ -751,7 +751,7 @@ export function mealGrams(items: FoodLogItem[]): number {
 /**
  * Recalcula un alimento ya añadido cuando el usuario cambia cantidad, medida o
  * comida. Si el alimento original no está en la base (p. ej. un producto
- * escaneado que se borró), escalamos por gramos para no perder los macros.
+ * buscado por código que se borró), escalamos por gramos para no perder los macros.
  */
 export function resizeFoodLogItem(
   item: FoodLogItem,

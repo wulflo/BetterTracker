@@ -99,7 +99,7 @@ describe('food database', () => {
   it('finds products by barcode across UPC/EAN zero padding', () => {
     const product: Food = {
       id: 'off-8412345678905',
-      name: 'Producto escaneado',
+      name: 'Producto con código de barras',
       category: 'procesado',
       per100: { kcal: 200, protein: 10, carbs: 20, fat: 8, fiber: 2 },
       units: {},
