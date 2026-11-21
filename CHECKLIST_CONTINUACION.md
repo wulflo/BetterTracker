@@ -112,5 +112,5 @@ Si algo falla, revisa primero `src/metrics.test.ts` y `src/bodyRange.test.ts`.
    `README.es.md` desde `docs/screenshots/`.
 6. [x] **Actualizar release**: bump `VERSION` a `0.9.20`, sync, notas en
    `docs/releases/v0.9.20.md`.
-7. [ ] **Push + workflows**: commit(s), push a `main`, lanzar workflows
+7. [x] **Push + workflows**: commit(s), push a `main`, lanzar workflows
    manuales (`package-linux`, `store-msix`, `release` con tag `v0.9.20`).
