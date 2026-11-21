@@ -2,16 +2,22 @@
 
 [![CI](https://github.com/wulflo/BetterTracker/actions/workflows/ci.yml/badge.svg)](https://github.com/wulflo/BetterTracker/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.9.19-informational.svg)](VERSION)
+[![Version](https://img.shields.io/badge/version-0.9.20-informational.svg)](VERSION)
 [![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20Android-lightgrey.svg)](#platforms)
 
 Training, body composition, nutrition, and weekly load in a **local-first** desktop app.
 
 Everything you log stays in a folder you choose. No accounts, no cloud, no telemetry.
 
-Current version: **0.9.19**.
+Current version: **0.9.20**.
 
 **Read this in:** **English** · [Español](README.es.md)
+
+## Screenshots
+
+![Dashboard](docs/screenshots/dashboard.en.png)
+![Body composition](docs/screenshots/body.en.png)
+![Nutrition](docs/screenshots/nutrition.en.png)
 
 ## Contents
 

@@ -84,3 +84,33 @@ Si algo falla, revisa primero `src/metrics.test.ts` y `src/bodyRange.test.ts`.
 
 - La bóveda (append-only) no se modifica por estos cambios: los eventos existentes (`activity.level`, `steps.average`, `training.frequency`, `intake.average`, `measurement.saved`, `weight.logged`) son compatibles.
 - Si internet se corta y vuelve: solo hace falta `npx tsc --noEmit && npm test && npm run build` para confirmar que nada roto.
+
+---
+
+# Cambios solicitados (2026-11-21) — checklist de continuación
+
+> Si se corta el internet, retoma desde aquí. Ejecuta siempre
+> `npx tsc --noEmit && npm test && npm run build` antes de seguir.
+
+## Tareas
+
+1. [x] **Color de acento coincide con la interfaz**: `BodyFigure.tsx` usaba
+   colores hex fijos (`#8f6fe8`, `#d0bcff`, …) independientes del acento
+   elegido. Sustituidos por variables CSS (`--primary-deep`, `--primary`,
+   `--primary-strong`, `--primary-container`, `--on-primary-container`,
+   `--warning`) para que sigan el acento activo.
+2. [x] **Proyección en 5 puntos**: tabla y gráfico usan una trayectoria
+   muestreada a 5 puntos (inicial, 3 intermedios, peso objetivo) en vez de
+   las ~12 semanas. El integrador diario se conserva; solo se muestrea la
+   salida (`sampleTrajectory` en `src/bodyRange.ts`).
+3. [x] **Algoritmo de predicción conservado**: integración diaria de dos
+   compartimentos (Hall/Forbes + termogénesis adaptativa) intacta; comparado
+   con la versión subida en GitHub (commit inicial) sin regresiones; 91
+   pruebas pasan.
+4. [x] **Checklist de continuación**: este documento.
+5. [x] **README con 3 screenshots**: añadir 3 capturas en `README.md` y
+   `README.es.md` desde `docs/screenshots/`.
+6. [x] **Actualizar release**: bump `VERSION` a `0.9.20`, sync, notas en
+   `docs/releases/v0.9.20.md`.
+7. [ ] **Push + workflows**: commit(s), push a `main`, lanzar workflows
+   manuales (`package-linux`, `store-msix`, `release` con tag `v0.9.20`).
