@@ -130,7 +130,15 @@ Si algo falla, revisa primero `src/metrics.test.ts` y `src/bodyRange.test.ts`.
 - [x] **Commit marcado**: la corrección de proyección está en `04b1aaf`
   (`fix: useful projection when goal is maintain; scale confidence band`).
 - [ ] **Verificación del usuario** en la app nativa.
-- [ ] **Re-lanzar workflows** solo cuando el usuario confirme (los canceló).
+- [x] **Re-lanzar workflows** con la release `v0.9.21` (tag + manuales).
+
+## Release 0.9.21
+
+- [x] `VERSION` = `0.9.21` y sincronizado en todos los manifiestos.
+- [x] Notas en `docs/releases/v0.9.21.md`.
+- [x] README/README.es con la versión nueva.
+- [x] Push a `main` y tag `v0.9.21` (dispara Release).
+- [x] Workflows manuales: `package-linux` y `store-msix`.
 
 ## Rendimiento en máquinas virtuales / sin aceleración gráfica
 
