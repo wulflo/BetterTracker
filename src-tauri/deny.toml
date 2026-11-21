@@ -1,6 +1,10 @@
 [advisories]
 yanked = "deny"
 unmaintained = "workspace"
+# chrono 0.4.45 está marcado como no mantenido (RUSTSEC-2026-0543). La app solo
+# usa reloj, fechas ISO y formato local; no hay una alternativa con la misma API
+# sin reescribir vault/commands. Se revisa al migrar a `time` o a un fork.
+ignore = ["RUSTSEC-2026-0543"]
 
 [licenses]
 allow = [

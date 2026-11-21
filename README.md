@@ -1,23 +1,41 @@
-# Better Fitness Tracker
+<div align="center">
+  <h1>Better Fitness Tracker</h1>
+  <p><strong>Train, eat and track your body — all local.</strong></p>
+  <p>Training, body composition, nutrition, and weekly load in a local-first desktop app.<br>
+  Everything you log stays in a folder you choose. No accounts, no cloud, no telemetry.</p>
 
-[![CI](https://github.com/wulflo/BetterTracker/actions/workflows/ci.yml/badge.svg)](https://github.com/wulflo/BetterTracker/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.9.21-informational.svg)](VERSION)
-[![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20Android-lightgrey.svg)](#platforms)
+  <p>
+    <a href="VERSION"><img src="https://img.shields.io/badge/version-0.9.21-4f7cff?style=flat-square" alt="Version 0.9.21"></a>
+    <a href="https://github.com/wulflo/BetterTracker/actions/workflows/ci.yml"><img src="https://github.com/wulflo/BetterTracker/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2ea44f?style=flat-square" alt="MIT license"></a>
+    <img src="https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20Android-6b7280?style=flat-square" alt="Platforms">
+    <img src="https://img.shields.io/badge/Tauri-v2-24c8d8?style=flat-square&logo=tauri&logoColor=white" alt="Tauri v2">
+    <img src="https://img.shields.io/badge/Rust-stable-b7410e?style=flat-square&logo=rust&logoColor=white" alt="Rust">
+  </p>
 
-Training, body composition, nutrition, and weekly load in a **local-first** desktop app.
+  <p>
+    <a href="#platforms">Platforms</a> ·
+    <a href="#features">Features</a> ·
+    <a href="#screenshots">Screenshots</a> ·
+    <a href="#build">Build</a> ·
+    <a href="CONTRIBUTING.md">Contributing</a> ·
+    <a href="README.es.md">Español</a>
+  </p>
 
-Everything you log stays in a folder you choose. No accounts, no cloud, no telemetry.
+  <p>Current version: <strong>0.9.21</strong></p>
+</div>
 
-Current version: **0.9.21**.
-
-**Read this in:** **English** · [Español](README.es.md)
+<img src="docs/screenshots/dashboard.en.png" alt="Better Fitness Tracker dashboard with daily metrics, macros, water and training summary">
 
 ## Screenshots
 
-![Dashboard](docs/screenshots/dashboard.en.png)
-![Body composition](docs/screenshots/body.en.png)
-![Nutrition](docs/screenshots/nutrition.en.png)
+| Body composition | Nutrition |
+| :---: | :---: |
+| <img src="docs/screenshots/body.en.png" alt="Body composition with adaptive silhouette, fat estimates and weight projection"> | <img src="docs/screenshots/nutrition.en.png" alt="Nutrition log with food search, macros and dual satiety"> |
+
+| Training | History |
+| :---: | :---: |
+| <img src="docs/screenshots/training.en.png" alt="Training view with routines, weekly plan and muscle heatmap"> | <img src="docs/screenshots/history.en.png" alt="Session history with sets, volume and personal records"> |
 
 ## Contents
 

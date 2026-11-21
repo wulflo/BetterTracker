@@ -1,23 +1,37 @@
-# Better Fitness Tracker
+<div align="center">
+  <h1>Better Fitness Tracker</h1>
+  <p><strong>Entrena, come y controla tu cuerpo — todo local.</strong></p>
+  <p>Entrenamiento, composición corporal, nutrición y carga semanal en una app de escritorio local-first.<br>
+  Todo lo que registras se queda en una carpeta que tú eliges. Sin cuentas, sin nube y sin telemetría.</p>
 
-[![CI](https://github.com/wulflo/BetterTracker/actions/workflows/ci.yml/badge.svg)](https://github.com/wulflo/BetterTracker/actions/workflows/ci.yml)
-[![Licencia: MIT](https://img.shields.io/badge/licencia-MIT-blue.svg)](LICENSE)
-[![Versión](https://img.shields.io/badge/versi%C3%B3n-0.9.21-informational.svg)](VERSION)
-[![Plataformas](https://img.shields.io/badge/plataformas-Linux%20%7C%20Windows%20%7C%20Android-lightgrey.svg)](#plataformas)
+  <p>
+    <a href="VERSION"><img src="https://img.shields.io/badge/versi%C3%B3n-0.9.21-4f7cff?style=flat-square" alt="Versión 0.9.21"></a>
+    <a href="https://github.com/wulflo/BetterTracker/actions/workflows/ci.yml"><img src="https://github.com/wulflo/BetterTracker/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/licencia-MIT-2ea44f?style=flat-square" alt="Licencia MIT"></a>
+    <img src="https://img.shields.io/badge/plataformas-Linux%20%7C%20Windows%20%7C%20Android-6b7280?style=flat-square" alt="Plataformas">
+    <img src="https://img.shields.io/badge/Tauri-v2-24c8d8?style=flat-square&logo=tauri&logoColor=white" alt="Tauri v2">
+    <img src="https://img.shields.io/badge/Rust-stable-b7410e?style=flat-square&logo=rust&logoColor=white" alt="Rust">
+  </p>
 
-Entrenamiento, composición corporal, nutrición y carga semanal en una app de escritorio **local-first**.
+  <p>
+    <a href="#plataformas">Plataformas</a> ·
+    <a href="#funciones">Funciones</a> ·
+    <a href="#capturas">Capturas</a> ·
+    <a href="#compilar">Compilar</a> ·
+    <a href="CONTRIBUTING.md">Contribuir</a> ·
+    <a href="README.md">English</a>
+  </p>
 
-Todo lo que registras se queda en una carpeta que tú eliges. Sin cuentas, sin nube y sin telemetría.
+  <p>Versión actual: <strong>0.9.21</strong></p>
+</div>
 
-Versión actual: **0.9.21**.
-
-**Leer en:** [English](README.md) · **Español**
+<img src="docs/screenshots/dashboard.es.png" alt="Panel de Better Fitness Tracker con métricas diarias, macros, agua y resumen de entrenamiento">
 
 ## Capturas
 
-![Panel](docs/screenshots/dashboard.es.png)
-![Historial](docs/screenshots/history.es.png)
-![Nutrición](docs/screenshots/nutrition.es.png)
+| Historial | Nutrición | Entrenamiento |
+| :---: | :---: | :---: |
+| <img src="docs/screenshots/history.es.png" alt="Historial de sesiones con series, volumen y récords personales"> | <img src="docs/screenshots/nutrition.es.png" alt="Registro de nutrición con búsqueda de alimentos, macros y saciedad dual"> | <img src="docs/screenshots/training.es.png" alt="Entrenamiento con rutinas, plan semanal y mapa de calor muscular"> |
 
 ## Contenido
 

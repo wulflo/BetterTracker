@@ -140,6 +140,15 @@ Si algo falla, revisa primero `src/metrics.test.ts` y `src/bodyRange.test.ts`.
 - [x] Push a `main` y tag `v0.9.21` (dispara Release).
 - [x] Workflows manuales: `package-linux` y `store-msix`.
 
+## Presentación del README y CI (2026-11-21)
+
+- [x] Cabecera centrada con badges `flat-square`, enlaces rápidos y versión.
+- [x] Capturas en tablas de 2/3 columnas (estilo SinNotas) en vez de imágenes
+  sueltas comprimidas por el ancho de línea.
+- [x] Captura destacada del panel a ancho completo.
+- [x] `RUSTSEC-2026-0543` (chrono sin mantenimiento) ignorado con justificación
+  en `src-tauri/deny.toml` para que `cargo-deny` no tumbe el CI.
+
 ## Rendimiento en máquinas virtuales / sin aceleración gráfica
 
 - [x] **Detección de VM**: `src-tauri/src/main.rs` detecta QEMU/KVM, VirtualBox,
