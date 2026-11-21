@@ -127,5 +127,21 @@ Si algo falla, revisa primero `src/metrics.test.ts` y `src/bodyRange.test.ts`.
 - [x] **Banda de confianza**: el tope de ritmo seguro se escala con la
    variabilidad (±8 %), así la banda no colapsa cuando el déficit es agresivo.
 - [x] **Etiqueta**: «5 puntos proyectados» en lugar de «4 semanas proyectadas».
+- [x] **Commit marcado**: la corrección de proyección está en `04b1aaf`
+  (`fix: useful projection when goal is maintain; scale confidence band`).
 - [ ] **Verificación del usuario** en la app nativa.
 - [ ] **Re-lanzar workflows** solo cuando el usuario confirme (los canceló).
+
+## Rendimiento en máquinas virtuales / sin aceleración gráfica
+
+- [x] **Detección de VM**: `src-tauri/src/main.rs` detecta QEMU/KVM, VirtualBox,
+  VMware, Hyper-V, Xen, Parallels, OpenStack, cloud, etc. por DMI,
+  `/proc/xen`, `/sys/hypervisor/type` y el flag `hypervisor` de `/proc/cpuinfo`.
+- [x] **Sin nodo de render**: si no hay `/dev/dri/renderD*`, se asume render por
+  software.
+- [x] **Modo compatibilidad**: en esos casos se activa
+  `WEBKIT_DISABLE_DMABUF_RENDERER=1`; sin nodo de render se añaden
+  `WEBKIT_DISABLE_COMPOSITING_MODE=1` y `LIBGL_ALWAYS_SOFTWARE=1`.
+- [x] **Overrides del usuario**: las variables de WebKit siguen teniendo
+  prioridad y desactivan la detección automática.
+- [x] Pruebas Rust de detección de hipervisores (`cargo test --bin better-tracker`).

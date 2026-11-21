@@ -46,7 +46,7 @@ The Microsoft Store build is produced separately with
 panel only explains that updates come from the Store. See
 [Microsoft Store (MSIX)](docs/MICROSOFT_STORE.md).
 
-On Linux the app uses GTK/WebKit and runs natively on Wayland. When the proprietary NVIDIA driver is detected, the app automatically disables WebKit's DMA-BUF renderer to avoid the `libnvidia-eglcore` crash that can freeze the desktop. Setting `WEBKIT_DISABLE_DMABUF_RENDERER`, `WEBKIT_DMABUF_RENDERER_FORCE_SHM`, `WEBKIT_DISABLE_COMPOSITING_MODE`, `__NV_DISABLE_EXPLICIT_SYNC` or `LIBGL_ALWAYS_SOFTWARE` yourself overrides that detection. Only one instance of the app runs at a time; launching it again focuses the existing window.
+On Linux the app uses GTK/WebKit and runs natively on Wayland. When the proprietary NVIDIA driver is detected, the app automatically disables WebKit's DMA-BUF renderer to avoid the `libnvidia-eglcore` crash that can freeze the desktop. The same compatibility path is enabled on virtual machines (QEMU/KVM, VirtualBox, VMware, Hyper-V, Xen, Parallels…) and on systems without a GPU render node, where the virtual or software GPU makes WebKit repaint several times slower. Setting `WEBKIT_DISABLE_DMABUF_RENDERER`, `WEBKIT_DMABUF_RENDERER_FORCE_SHM`, `WEBKIT_DISABLE_COMPOSITING_MODE`, `__NV_DISABLE_EXPLICIT_SYNC` or `LIBGL_ALWAYS_SOFTWARE` yourself overrides that detection. Only one instance of the app runs at a time; launching it again focuses the existing window.
 
 ## Features
 

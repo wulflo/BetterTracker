@@ -46,7 +46,7 @@ compila `tauri-plugin-updater`; el panel de actualizaciones solo explica que
 las actualizaciones llegan desde la Store. Ver
 [Microsoft Store (MSIX)](docs/MICROSOFT_STORE.md).
 
-En Linux la app usa GTK/WebKit y funciona en Wayland de forma nativa. Cuando se detecta el driver propietario de NVIDIA, la app desactiva automáticamente el renderer DMA-BUF de WebKit para evitar el fallo de `libnvidia-eglcore` que puede congelar el escritorio. Si defines tú mismo `WEBKIT_DISABLE_DMABUF_RENDERER`, `WEBKIT_DMABUF_RENDERER_FORCE_SHM`, `WEBKIT_DISABLE_COMPOSITING_MODE`, `__NV_DISABLE_EXPLICIT_SYNC` o `LIBGL_ALWAYS_SOFTWARE`, esa detección se desactiva. Solo se ejecuta una instancia de la app; al abrirla de nuevo se enfoca la ventana existente.
+En Linux la app usa GTK/WebKit y funciona en Wayland de forma nativa. Cuando se detecta el driver propietario de NVIDIA, la app desactiva automáticamente el renderer DMA-BUF de WebKit para evitar el fallo de `libnvidia-eglcore` que puede congelar el escritorio. Ese mismo modo de compatibilidad se activa en máquinas virtuales (QEMU/KVM, VirtualBox, VMware, Hyper-V, Xen, Parallels…) y en equipos sin nodo de render por GPU, donde la GPU virtual o el render por software hacen que WebKit repinte varias veces más lento. Si defines tú mismo `WEBKIT_DISABLE_DMABUF_RENDERER`, `WEBKIT_DMABUF_RENDERER_FORCE_SHM`, `WEBKIT_DISABLE_COMPOSITING_MODE`, `__NV_DISABLE_EXPLICIT_SYNC` o `LIBGL_ALWAYS_SOFTWARE`, esa detección se desactiva. Solo se ejecuta una instancia de la app; al abrirla de nuevo se enfoca la ventana existente.
 
 ## Funciones
 
