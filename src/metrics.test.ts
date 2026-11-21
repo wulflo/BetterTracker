@@ -100,8 +100,10 @@ describe('metrics', () => {
     const low = computeEnergyExpenditure(BODY, summary, null, 6200, 'sedentary', 0, 'es');
     const high = computeEnergyExpenditure(BODY, summary, null, 7800, 'sedentary', 0, 'es');
     // Sin escalones: 6200 y 7800 pasos generan gastos distintos y proporcionales.
-    const expectedLow = 1.15 * low.bmr + (6.2 * 0.045 * 80);
-    const expectedHigh = 1.15 * high.bmr + (7.8 * 0.045 * 80);
+    // NEAT = máx((PAL − 1) × BMR, caminar); el PAL ya incluye caminar, así que
+    // los pasos no se suman otra vez.
+    const expectedLow = Math.max(0.15 * low.bmr, 6.2 * 0.45 * 80);
+    const expectedHigh = Math.max(0.15 * high.bmr, 7.8 * 0.45 * 80);
     expect(low.neat).toBeCloseTo(expectedLow, 0);
     expect(high.neat).toBeCloseTo(expectedHigh, 0);
     expect(high.tdee).toBeGreaterThan(low.tdee);
@@ -223,9 +225,9 @@ describe('metrics', () => {
     const sedentary = computeEnergyExpenditure(BODY, summary, null, 0, 'sedentary', 0, 'es');
     const walker = computeEnergyExpenditure(BODY, summary, null, 12000, 'sedentary', 0, 'es');
     const high = computeEnergyExpenditure(BODY, summary, null, 0, 'high', 0, 'es');
-    // La base del nivel de actividad multiplica el BMR dinámico.
-    expect(sedentary.neat).toBeCloseTo(1.15 * sedentary.bmr, 0);
-    // Pasos: 0,045 kcal × kg × pasos/1000 adicionales sin escalones.
+    // El NEAT solo aporta la parte del PAL que supera el BMR (1,15 − 1).
+    expect(sedentary.neat).toBeCloseTo(0.15 * sedentary.bmr, 0);
+    // Pasos: 0,45 kcal × kg × pasos/1000, usados como suelo del PAL.
     expect(walker.neat).toBeGreaterThan(sedentary.neat);
     // Nivel más alto = base más alta, sin sumar dos veces el entrenamiento.
     expect(high.neat).toBeGreaterThan(sedentary.neat);

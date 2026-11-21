@@ -227,6 +227,27 @@ describe('rangos corporales seguros', () => {
     expect(projection.warnings.join(' ')).not.toMatch(/gasto basal/);
   });
 
+  it('devuelve un intervalo del 90 % que contiene el valor central y no colapsa', () => {
+    const projection = projectBody(BODY, 'cut', 180, 'moderate', MUSCULAR, 'es', 12, 8000, {
+      avgIntakeKcal: 2000,
+      intakeSource: 'manual',
+    });
+
+    expect(projection.weightLow).not.toBeNull();
+    expect(projection.weightHigh).not.toBeNull();
+    expect(projection.weightLow!).toBeLessThan(projection.weightHigh!);
+    // El intervalo incorpora BMR, PAL, ingesta, adaptación y agua: no puede
+    // reducirse a unas décimas de kilo como la antigua banda ±8 %.
+    expect(projection.weightHigh! - projection.weightLow!).toBeGreaterThan(1);
+
+    for (const milestone of projection.milestones) {
+      expect(milestone.weightLow).toBeLessThanOrEqual(milestone.weight);
+      expect(milestone.weightHigh).toBeGreaterThanOrEqual(milestone.weight);
+      expect(milestone.dateLow <= milestone.date).toBe(true);
+      expect(milestone.dateHigh >= milestone.date).toBe(true);
+    }
+  });
+
   it('expresa proyecciones largas en años', () => {
     expect(formatProjectionDuration(5, 'es')).toBe('5 semana(s)');
     expect(formatProjectionDuration(20, 'es')).toBe('5 meses');

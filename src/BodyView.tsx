@@ -370,7 +370,7 @@ export default function BodyView({ deviceId, events, onRefresh, notify }: Props)
               </div>
               <div className="metric-value-lg">{Math.round(projection.dailyBreakdown.neat)} kcal</div>
               <div className="metric-caption">
-                {tx(lang, 'Factor base × BMR + gasto de caminar', 'Base factor × BMR + walking expenditure')}
+                {tx(lang, 'Factor PAL − 1 × BMR + gasto de caminar', 'PAL factor − 1 × BMR + walking expenditure')}
               </div>
             </div>
             <div className="metric">
@@ -400,7 +400,7 @@ export default function BodyView({ deviceId, events, onRefresh, notify }: Props)
             <div className="grid grid-2" style={{ gap: 10 }}>
               <div className="metric">
                 <div className="metric-label">
-                  {tx(lang, 'Banda de confianza del peso', 'Weight confidence band')}
+                  {tx(lang, 'Intervalo de predicción del 90 %', '90% prediction interval')}
                 </div>
                 <div className="metric-value-lg">
                   {projection.weightLow?.toFixed(1)} – {projection.weightHigh?.toFixed(1)} kg
@@ -408,8 +408,8 @@ export default function BodyView({ deviceId, events, onRefresh, notify }: Props)
                 <div className="metric-caption">
                   {tx(
                     lang,
-                    '±8 % de variabilidad metabólica y adherencia; hitos dentro de la banda',
-                    '±8% metabolic and adherence variability; milestones within the band',
+                    'Percentiles 5–95 de 81 escenarios Monte Carlo: BMR, PAL, ingesta, adaptación y agua',
+                    '5th–95th percentiles from 81 Monte Carlo scenarios: BMR, PAL, intake, adaptation and water',
                   )}
                 </div>
               </div>

@@ -162,3 +162,17 @@ Si algo falla, revisa primero `src/metrics.test.ts` y `src/bodyRange.test.ts`.
 - [x] **Overrides del usuario**: las variables de WebKit siguen teniendo
   prioridad y desactivan la detección automática.
 - [x] Pruebas Rust de detección de hipervisores (`cargo test --bin better-tracker`).
+
+## Release 0.10.1 — predictor e intervalo científico
+
+- [ ] Revisión con datos reales de la bóveda (`/home/alonso/Descargas/Salud`).
+- [ ] NEAT sin doble conteo: `(PAL − 1) × BMR` y pasos como suelo.
+- [ ] Coste de caminar corregido a 0,45 kcal/kg/1000 pasos.
+- [ ] Curva de Forbes corregida a `10,4/(F + 10,4)`.
+- [ ] Intervalo de predicción del 90 % (Monte Carlo, 81 escenarios).
+- [ ] Hitos coherentes con la trayectoria simulada.
+- [ ] `VERSION` = `0.10.1` y manifiestos sincronizados.
+- [ ] README/README.es con la versión nueva.
+- [ ] Notas en `docs/releases/v0.10.1.md`.
+- [ ] Push a `main` y tag `v0.10.1` (dispara CI y Release).
+- [ ] No lanzar `store-msix` (manual) ni usar `gh run watch`.

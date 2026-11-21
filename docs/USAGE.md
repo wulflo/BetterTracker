@@ -11,7 +11,7 @@ La app se instala en **inglés** por defecto; se puede cambiar a español desde 
 La tarjeta **Rango seguro y progreso proyectado** muestra ahora siempre y sin colapsar los controles de proyección:
 
 - **Nivel de actividad física**: `Automático` (deduce el PAL de los minutos de entrenamiento de los últimos 7 días), o un nivel fijo: Sedentario, Ligero, Moderado, Alto, Muy alto. Al cambiarlo, el evento `activity.level` se guarda en la bóveda y la proyección se actualiza de inmediato.
-- **Pasos promedio al día**: aportan NEAT adicional — `(pasos/1000) × 0,045 × peso` kcal/día. Sin escalones: 6200 y 7800 pasos generan gastos distintos y proporcionales.
+- **Pasos promedio al día**: actúan como suelo del NEAT — `máx((PAL − 1) × BMR, (pasos/1000) × 0,45 × peso)` kcal/día. No se suman al PAL porque el PAL ya incluye caminar. Sin escalones: 6200 y 7800 pasos generan gastos distintos y proporcionales.
 - **Calorías promedio que consumes**: la ingesta media del balance (TEF incluido). El botón **Usar media registrada** aparece cuando hay al menos 3 días de registros recientes.
 - **Ritmo/frecuencia de entrenamiento**: sesiones por semana o por mes; combinada con la observada en los últimos 30 días (se usa la mayor).
 
@@ -24,9 +24,9 @@ La tarjeta **Rango seguro y progreso proyectado** muestra ahora siempre y sin co
 - **Adaptación metabólica (AT)**: termogénesis adaptativa exponencial (α ≈ 11 % del desbalance, τ = 18 días).
 - **TDEE total**: `BMR + TEF + NEAT + EAT − AT`.
 
-### Banda de confianza
+### Intervalo de predicción
 
-La curva de peso y los hitos se presentan dentro de una **banda de confianza (±8 %)**: se ejecutan las trayectorias límite de variabilidad metabólica y adherencia, y la app devuelve `weightLow`/`weightHigh` con hitos que incluyen rango realista y fechas de llegada con margen.
+La curva de peso y los hitos se presentan dentro de un **intervalo de predicción del 90 %** (percentiles 5–95) calculado con 81 escenarios Monte Carlo: BMR ±10 %, PAL/NEAT ±12 %, ingesta ±10 % manual/objetivo o ±6 % registrada, termogénesis adaptativa α ±50 %, partición Forbes ±20 % y agua ±1,5 kg. La app devuelve `weightLow`/`weightHigh` y fechas de llegada con rango; el valor central sigue siendo la estimación más probable.
 
 ### Evolución proyectada de composición
 
@@ -54,10 +54,10 @@ El consenso es una media ponderada por varianza inversa (`w_base = (1/SEE²)·(1
 La proyección es un integrador fisiológico diario de dos compartimentos (Hall/Forbes + termogénesis adaptativa):
 
 - Estado inicial de grasa y magra desde `bodyComposition`.
-- Partición grasa/magra siguiendo la curva de Forbes (10,4/F), modulada por la fuerza: en déficit, fuerza ≥12 sesiones/mes reduce la pérdida magra hasta ≈5–10 %; en superávit, la ganancia de magra escala con el estímulo de fuerza.
+- Partición grasa/magra siguiendo la curva de Forbes (`10,4/(F + 10,4)`), modulada por la fuerza: en déficit, la fracción magra se acota al 5–40 % y con fuerza ≥12 sesiones/mes baja hasta ≈5–10 %; en superávit, la ganancia de magra escala con el estímulo de fuerza.
 - Termogénesis adaptativa exponencial (α ≈ 11 % del desbalance, τ = 18 días).
 - Transitorio de glucógeno/agua (±1,8 kg) distinguiendo peso en báscula vs. peso de tejido.
-- Banda de incertidumbre ±8 % de variabilidad metabólica y adherencia.
+- Intervalo de predicción del 90 % (percentiles 5–95) con Monte Carlo sobre BMR, PAL, ingesta, adaptación, partición y agua.
 
 ## Figura corporal — Silueta
 

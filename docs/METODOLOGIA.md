@@ -93,11 +93,11 @@ La ecuación femenina requiere brazo, antebrazo, cuello, abdomen y muslo.
 - **Modelo energético continuo** (`computeEnergyExpenditure`): `TDEE = BMR + TEF + NEAT + EAT`:
   - **BMR dinámico**: promedio ponderado entre Katch-McArdle/Cunningham (cuando hay masa magra estimada) y Mifflin-St Jeor (sin ella); se recalculan cada día de la proyección con `L(t)` y `F(t)`.
   - **TEF (efecto térmico de los alimentos)**: `0.10 × I` (10 % de la ingesta calórica media).
-  - **NEAT continuo**: factor base no deportivo según nivel de actividad (`sedentary: 1,15`, `light: 1,22`, `moderate: 1,30`, `high: 1,38`, `very_high: 1,46`, `auto: 1,20`) × BMR dinámico, más el gasto neto continuo de caminar `kcal_pasos(t) = (avgSteps / 1000) × 0.045 × W(t)` (sin escalones: 6200 y 7800 pasos generan gastos distintos y proporcionales).
+  - **NEAT continuo**: el PAL declarado ya incluye caminar, así que los pasos no se suman otra vez. Se usa `NEAT = máx((PAL − 1) × BMR, pasos)`, con el factor PAL por nivel (`sedentary: 1,15`, `light: 1,22`, `moderate: 1,30`, `high: 1,38`, `very_high: 1,46`, `auto: 1,20`) y `kcal_pasos(t) = (avgSteps / 1000) × 0.45 × W(t)` (≈0,5 kcal/kg/km; sin escalones: 6200 y 7800 pasos generan gastos distintos y proporcionales).
   - **EAT continuo**: por ritmo semanal de entrenamiento, con `estimateTraining(summary, declaredPerWeek)`; por sesión `min/sesión × MET × W(t)` (≈4,5 MET en fuerza, ≈6,5 en cardio/mixto) y promediado diariamente (sesiones/sem ÷ 7).
 - **Frecuencia declarada**: `training.frequency` acepta sesiones por semana o por mes y se normaliza a sesiones por semana. `estimateTraining` combina la declarada con la observada en los últimos 30 días y usa la **mayor** de ambas, de modo que registrar solo 1 de 5 sesiones no subestima el gasto. Los minutos semanales observados en 7 días actúan como suelo.
 - **Duración media**: sale de las sesiones registradas; solo se asumen 45 min cuando no hay ninguna. La **fuerza mensual** se estima con la proporción de sesiones de fuerza entre las registradas y, sin registros, se asumen de fuerza las sesiones declaradas.
-- **Pasos diarios medios**: contribuyen NEAT continuo aditivo ((pasos/1000) × 0,045 × peso kcal/día).
+- **Pasos diarios medios**: actúan como suelo del NEAT: `máx((PAL − 1) × BMR, (pasos/1000) × 0,45 × peso)`. No se suman al PAL para no duplicar el gasto de caminar.
 - **Ingesta media** (`intake.average`): es un dato **manual**, no derivado. La proyección usa ese valor como ingesta del balance y en el TEF; si no existe, usa la media de los días con registro en 28 días (mínimo 3) o el objetivo de calorías. El atajo de la interfaz solo rellena el campo editable.
 - Calorías objetivo: TDEE × `0.85` (definición), `1.10` (volumen) o `1.0` (mantenimiento).
 - Proteína: `2.0 g/kg` en definición, `1.8 g/kg` en el resto.
@@ -120,18 +120,18 @@ El peso objetivo no se limita al IMC cuando hay composición corporal:
 La fecha y los hitos futuros salen del **integrador fisiológico diario** (Hall/Forbes + termogénesis adaptativa):
 
 - Estado inicial de dos compartimentos (`F(0)`, `L(0)`) desde `bodyComposition`; sin composición, se asume ≈80 % de masa magra.
-- Cada día (`dt = 1 día`): `TDEE(t) = BMR(t) + TEF + NEAT(t) + EAT(t) − AT(t)`; la pérdida/ganancia se particiona grasa/magra siguiendo la curva de Forbes (`10,4/F(t)`) modulada por la fuerza mensual:
+- Cada día (`dt = 1 día`): `TDEE(t) = BMR(t) + TEF + NEAT(t) + EAT(t) − AT(t)`; la pérdida/ganancia se particiona grasa/magra siguiendo la curva de Forbes, donde la fracción magra es `10,4/(F(t) + 10,4)` (acotada al 5–40 % sin fuerza) y se modula por la fuerza mensual:
   - En déficit, fuerza ≥12 sesiones/mes reduce la fracción de pérdida magra hasta el mínimo fisiológico ≈5–10 %, dirigiendo el 90–95 % del déficit a la grasa.
   - En superávit, la ganancia de masa magra escala con el estímulo de fuerza (hasta ≈45–55 % del exceso entrenado; ≈20–25 % sin fuerza).
 - **Termogénesis adaptativa**: `dAT/dt = (α·ΔE(t) − AT(t))/τ` con `α ≈ 0,11` (11 % del desbalance `ΔE = I − TDEE`) y `τ = 18 días`, reflejando la adaptación metabólica real en déficit o superávit sostenidos.
 - **Transitorio de glucógeno/agua**: `ΔW_agua(t) = ΔW_max·(1 − e^(−t/4))`, acotado a ±1,8 kg; cada punto de la serie distingue el `scaleWeight` (peso en báscula) del `tissueWeight` (`F(t) + L(t)`).
-- **Banda de incertidumbre (±1σ)**: se ejecutan las trayectorias límite (±8 % de variabilidad metabólica y de adherencia calórica) y se devuelven `weightLow`, `weightHigh`, hitos con rango realista y fechas de llegada con rango.
+- **Intervalo de predicción del 90 %**: Monte Carlo determinista con 81 escenarios (percentiles 5–95) sobre las incertidumbres publicadas: BMR ±10 %, PAL/NEAT ±12 %, ingesta ±10 % manual/objetivo o ±6 % registrada, termogénesis adaptativa α ±50 %, partición Forbes ±20 % y agua ±1,5 kg. Se devuelven `weightLow`, `weightHigh`, hitos con rango y fechas de llegada con rango. Los escenarios no se detienen en el objetivo, así el intervalo describe el peso esperado en la fecha central y no colapsa a un punto.
 - El déficit/superávit sale de la ingesta media frente al TDEE simulado: un déficit de 500 kcal y uno de 800 kcal no producen el mismo ritmo, y al perder peso el gasto baja y el ritmo se frena.
 - El ritmo semanal está limitado por seguridad según el peso y la fuerza mensual:
   - Definición: `0,75–1,0 %` del peso por semana según la fuerza mensual (0–12 sesiones).
   - Volumen: `0,25–0,5 %` del peso por semana según la fuerza mensual.
 - El indicador de fuerza es el número de días distintos con al menos un ejercicio de tipo `fuerza` en los últimos 30 días.
-- En definición se descuenta la parte del peso perdido que podría ser masa magra: sin fuerza se asume que solo el `75%` del cambio es grasa; con fuerza frecuente, hasta el `100%`. Por eso la misma pérdida de grasa requiere más tiempo cuando no se entrena fuerza.
+- En definición se descuenta la parte del peso perdido que podría ser masa magra con la curva de Forbes (`10,4/(F + 10,4)`): sin fuerza, entre el `60 %` y el `95 %` del cambio es grasa según la masa grasa disponible (la fracción magra se acota al 5–40 %); con fuerza frecuente (≥12 sesiones/mes), la pérdida magra baja a ≈5–10 %. Por eso la misma pérdida de grasa requiere más tiempo cuando no se entrena fuerza.
 - Los pasos medios, la actividad y los minutos de entrenamiento cambian el TDEE, y con ello el déficit/superávit y las fechas de los hitos.
 - La app avisa cuando la ingesta queda por debajo de la TMB, el déficit supera ~30 % del TDEE, el superávit alcanza el 20 % del TDEE o el ritmo debe recortarse por seguridad.
 - Las fechas de los hitos y de llegada incluyen siempre el año; las duraciones largas se muestran en meses o años en lugar de semanas sueltas.

@@ -873,7 +873,7 @@ export interface EnergyBreakdown {
   bmr: number;
   /** Efecto térmico de los alimentos: 10 % de la ingesta calórica media. */
   tef: number;
-  /** NEAT continuo: factor base no deportivo por nivel + gasto de caminar. */
+  /** NEAT continuo: máx((factor PAL − 1) × BMR, gasto de caminar). */
   neat: number;
   /** EAT continuo: gasto asociado al ritmo de entrenamiento. */
   eat: number;
@@ -883,7 +883,7 @@ export interface EnergyBreakdown {
   activityFactor: number;
 }
 
-/** Bases no deportivas de NEAT por nivel de actividad (PAL sin el ejercicio registrado). */
+/** Factores PAL por nivel de actividad; el NEAT usa solo la parte por encima del BMR. */
 const NEAT_BASE: Record<ActivityLevel, number> = {
   auto: 1.20,
   sedentary: 1.15,
@@ -893,7 +893,11 @@ const NEAT_BASE: Record<ActivityLevel, number> = {
   very_high: 1.46,
 };
 
-/** Factor base no deportivo usado en el modelo continuo (`NEAT = factor × BMR + pasos`). */
+/**
+ * Factor PAL (actividad total) usado en el modelo continuo. El NEAT se calcula
+ * como `(factor − 1) × BMR`: el BMR ya se suma aparte en el TDEE, así que usar
+ * el factor completo duplicaría el metabolismo basal y dispararía el gasto.
+ */
 export function activityBaseFactor(level: ActivityLevel | null): number {
   if (!level || level === 'auto') return 1.20;
   return NEAT_BASE[level] ?? 1.20;
@@ -911,9 +915,12 @@ function bmrDynamic(m: BodyMeasures, lean: number): number {
   return bmrMifflin(weight, m.height > 0 ? m.height : 170, m.age > 0 ? m.age : 30, m.sex);
 }
 
-/** Gasto neto continuo de caminar: 0,045 kcal × kg × (pasos/1000)/día. */
-function walkingKcalPerDay(m: BodyMeasures, avgSteps: number): number {
-  return avgSteps > 0 ? (avgSteps / 1000) * 0.045 * (m.weight > 0 ? m.weight : 70) : 0;
+/**
+ * Gasto neto continuo de caminar: ≈0,45 kcal × kg × (pasos/1000)/día.
+ * Equivale a ≈0,5 kcal/kg/km con 1000 pasos ≈ 0,75 km.
+ */
+function walkingKcalPerDay(avgSteps: number, weight: number): number {
+  return avgSteps > 0 ? (avgSteps / 1000) * 0.45 * (weight > 0 ? weight : 70) : 0;
 }
 
 /**
@@ -935,8 +942,8 @@ export function trainingEatKcalPerDay(
 
 /**
  * Desglose continuo del gasto energético: BMR dinámico + TEF (10 % de la
- * ingesta media) + NEAT (base no deportiva × BMR + pasos) + EAT (sesiones de
- * entreno). El AT adaptativo se calcula en la integración de proyección.
+ * ingesta media) + NEAT (máx((factor PAL − 1) × BMR, pasos)) + EAT (sesiones
+ * de entreno). El AT adaptativo se calcula en la integración de proyección.
  */
 export function computeEnergyExpenditure(
   m: BodyMeasures,
@@ -950,7 +957,11 @@ export function computeEnergyExpenditure(
   const comp = bodyComposition(m, lang);
   const bmr = bmrDynamic(m, comp.leanMass ?? 0);
   const tef = 0.10 * intakeKcal;
-  const neat = activityBaseFactor(activityLevel) * bmr + walkingKcalPerDay(m, avgSteps);
+  // El PAL ya incluye caminar: los pasos son un suelo, no un sumando. Se usa
+  // el mayor entre la actividad declarada y el gasto implícito de los pasos.
+  const activityNeat = (activityBaseFactor(activityLevel) - 1) * bmr;
+  const stepNeat = walkingKcalPerDay(avgSteps, m.weight > 0 ? m.weight : 70);
+  const neat = Math.max(activityNeat, stepNeat);
   const eat = trainingEatKcalPerDay(summary, declaredPerWeek, m.weight > 0 ? m.weight : 0);
   const tdee = bmr + tef + neat + eat;
   return { bmr, tef, neat, eat, tdee, activityFactor: bmr > 0 ? tdee / bmr : 1 };
@@ -1014,8 +1025,8 @@ export function computeMacros(
     notes.push(
       tx(
         lang,
-        `Actividad declarada: ${option.label} (factor base ×${activityBaseFactor(activityLevel)} + pasos ${Math.round(avgSteps)}/día + entreno).`,
-        `Declared activity: ${option.label} (base factor ×${activityBaseFactor(activityLevel)} + ${Math.round(avgSteps)} steps/day + training).`,
+        `Actividad declarada: ${option.label} (PAL ×${activityBaseFactor(activityLevel)}; NEAT = máx((PAL − 1) × BMR, pasos ${Math.round(avgSteps)}/día) + entreno).`,
+        `Declared activity: ${option.label} (PAL ×${activityBaseFactor(activityLevel)}; NEAT = max((PAL − 1) × BMR, ${Math.round(avgSteps)} steps/day) + training).`,
       ),
     );
   }

@@ -11,7 +11,7 @@ The app installs in **English** by default; you can switch to Spanish from **Set
 The **Safe range and projected progress** card now always shows the projection controls:
 
 - **Physical activity level**: `Automatic` (deduces PAL from training minutes in the last 7 days) or a fixed level: Sedentary, Light, Moderate, High, Very high. Changing it appends the `activity.level` vault event and updates the projection immediately.
-- **Average daily steps**: contribute extra NEAT — `(steps/1000) × 0.045 × weight` kcal/day. With no steps: 6200 and 7800 steps produce different, proportional expenditure.
+- **Average daily steps**: act as a NEAT floor — `max((PAL − 1) × BMR, (steps/1000) × 0.45 × weight)` kcal/day. They are not added to PAL because PAL already includes walking. With no steps: 6200 and 7800 steps produce different, proportional expenditure.
 - **Average calories you eat**: the average intake used in the balance (TEF included). A **Use logged average** button appears when you have at least 3 recent logged days.
 - **Training frequency**: sessions per week or per month; combined with the observed sessions in the last 30 days (the higher value is used).
 
@@ -19,14 +19,14 @@ The **Safe range and projected progress** card now always shows the projection c
 
 - **Dynamic BMR**: Katch-McArdle/Cunningham weighted average + Mifflin-St Jeor, recalculated with the simulated lean and fat mass.
 - **TEF**: `10 %` of the average intake.
-- **NEAT (steps + base activity)**: non-sport base factor by activity level (`sedentary: 1.15`, `light: 1.22`, `moderate: 1.30`, `high: 1.38`, `very_high: 1.46`, `auto: 1.20`) × dynamic BMR + walking expenditure.
+- **NEAT (steps or base activity)**: `max((PAL − 1) × dynamic BMR, walking expenditure)`, with a PAL factor by activity level (`sedentary: 1.15`, `light: 1.22`, `moderate: 1.30`, `high: 1.38`, `very_high: 1.46`, `auto: 1.20`). Walking is not added twice.
 - **EAT training**: `sessions/wk ÷ 7 × min/session × MET × W(t)` (≈4.5 MET strength, ≈6.5 MET cardio/mixed).
 - **Metabolic adaptation (AT)**: exponential adaptive thermogenesis (α ≈ 11 % of the energy imbalance, τ = 18 days).
 - **Total TDEE**: `BMR + TEF + NEAT + EAT − AT`.
 
 ### Confidence band
 
-The weight curve and milestones are shown within a **confidence band (±8 %)**: limit trajectories of metabolic variability and adherence are executed, and the app returns `weightLow`/`weightHigh` with milestones that include realistic ranges and estimated arrival dates with ranges.
+The weight curve and milestones are shown within a **90 % prediction interval** (5th–95th percentiles) from 81 Monte Carlo scenarios: BMR ±10 %, PAL/NEAT ±12 %, intake ±10 % manual/target or ±6 % logged, adaptive thermogenesis α ±50 %, Forbes partition ±20 %, and water ±1.5 kg. The app returns `weightLow`/`weightHigh` and arrival dates with a range; the central value remains the most likely estimate.
 
 ### Projected evolution
 
@@ -54,10 +54,10 @@ The consensus is a precision-weighted average (`w_base = (1/SEE²)·(1 + 0.05·m
 The projection is a daily physiological integrator of two compartments (Hall/Forbes + adaptive thermogenesis):
 
 - Initial fat and lean mass from `bodyComposition`.
-- Fat/lean partition following the Forbes curve (10.4/F), modulated by strength: in deficit, ≥12 strength sessions/month reduce lean loss to ≈5–10 %; in surplus, lean gain scales with the strength stimulus.
+- Fat/lean partition following the Forbes curve (`10.4/(F + 10.4)`), modulated by strength: in deficit, the lean fraction is capped at 5–40 % and ≥12 strength sessions/month reduce lean loss to ≈5–10 %; in surplus, lean gain scales with the strength stimulus.
 - Exponential adaptive thermogenesis (α ≈ 11 % of the imbalance, τ = 18 days).
 - Glycogen/water transient (±1.8 kg) distinguishing scale weight vs. tissue weight.
-- ±8 % uncertainty band of metabolic and adherence variability.
+- 90 % prediction interval (5th–95th percentiles) from Monte Carlo over BMR, PAL, intake, adaptation, partition and water.
 
 ## Body figure — Silhouette
 
@@ -69,7 +69,7 @@ Manual check from Settings. No automatic background check.
 
 ## Frequently asked
 
-- **What do the steps do?** They contribute NEAT: 6200 and 7800 steps produce different, proportional expenditure, additive to the activity-level expenditure.
+- **What do the steps do?** They set a NEAT floor: 6200 and 7800 steps produce different, proportional expenditure. They are not added on top of the activity-level expenditure because the PAL already includes walking.
 - **What if my BMI is high but I have muscle?** The app shows the muscular warning (`muscularOverride`) when whtr is optimal and % fat is within the military standard.
 
 ## Automatic data (append-only vault events)

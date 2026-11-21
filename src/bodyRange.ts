@@ -59,13 +59,13 @@ export interface ProjectionMilestone {
   bodyFat: number | null;
   fatMass: number | null;
   leanMass: number | null;
-  /** Extremo bajo realista del peso en báscula (banda ±1σ). */
+  /** Percentil 5 del peso en báscula (intervalo de predicción del 90 %). */
   weightLow: number;
-  /** Extremo alto realista del peso en báscula. */
+  /** Percentil 95 del peso en báscula. */
   weightHigh: number;
-  /** Fecha estimada de llegada baja (banda). */
+  /** Percentil 5 de la fecha de llegada. */
   dateLow: string;
-  /** Fecha estimada de llegada alta (banda). */
+  /** Percentil 95 de la fecha de llegada. */
   dateHigh: string;
 }
 
@@ -348,14 +348,50 @@ interface IntegrationInputs {
   targetWeight: number | null;
   summary?: TrainingSummary;
   declaredPerWeek?: number | null;
+  /** Desviación de la ingesta (fracción): manual/objetivo ≈10 %, registrada ≈6 %. */
+  intakeSd: number;
+  /** Transitorio máximo de glucógeno/agua (kg, con signo). */
+  waterMax: number;
 }
+
+/**
+ * Parámetros de una simulación de incertidumbre. El escenario central es todo
+ * 1 (y agua 0); los demás se muestrean con la incertidumbre publicada de cada
+ * componente (BMR, PAL/NEAT, ingesta, adaptación y partición Forbes).
+ */
+interface ProjectionVariant {
+  bmrScale: number;
+  neatScale: number;
+  intakeScale: number;
+  atScale: number;
+  partitionScale: number;
+  waterOffset: number;
+}
+
+interface ScenarioTrajectory {
+  points: ProjectionTrajectoryPoint[];
+  pointDays: number[];
+}
+
+const CENTRAL_VARIANT: ProjectionVariant = {
+  bmrScale: 1,
+  neatScale: 1,
+  intakeScale: 1,
+  atScale: 1,
+  partitionScale: 1,
+  waterOffset: 0,
+};
 
 interface IntegrationResult {
   points: ProjectionTrajectoryPoint[];
-  /** Trayectoria límite baja (≈ −8 % de variabilidad metabólica y adherencia). */
+  /** Día (0 = hoy) de cada punto de `points`. */
+  pointDays: number[];
+  /** Trayectoria del percentil 5 (extremo de pérdida rápida). */
   bandLowPoints: ProjectionTrajectoryPoint[];
-  /** Trayectoria límite alta. */
+  /** Trayectoria del percentil 95 (extremo de pérdida lenta). */
   bandHighPoints: ProjectionTrajectoryPoint[];
+  /** Trayectorias Monte Carlo completas, para percentiles de fechas. */
+  scenarios: ScenarioTrajectory[];
   final: { scaleWeight: number; tissueWeight: number; fatMass: number; leanMass: number };
   weeklyRateKg: number;
   finalWeeklyRateKg: number;
@@ -378,8 +414,13 @@ function dynamicBmr(m: BodyMeasures, lean: number): number {
   return bmrMifflin(m.weight > 0 ? m.weight : 70, m.height > 0 ? m.height : 170, m.age > 0 ? m.age : 30, m.sex);
 }
 
-function walkingKcalPerDay(m: BodyMeasures, avgSteps: number): number {
-  return avgSteps > 0 ? (avgSteps / 1000) * 0.045 * (m.weight > 0 ? m.weight : 70) : 0;
+/**
+ * Gasto neto de caminar: ≈0,45 kcal por kg y por 1000 pasos. Equivale a
+ * ≈0,5 kcal/kg/km con 1000 pasos ≈ 0,75 km, el valor habitual en la
+ * literatura. Se calcula con el peso simulado de cada día.
+ */
+function walkingKcalPerDay(avgSteps: number, weight: number): number {
+  return avgSteps > 0 ? (avgSteps / 1000) * 0.45 * (weight > 0 ? weight : 70) : 0;
 }
 
 /** Transitorio de glucógeno/agua tras un cambio de ingesta vs mantenimiento inicial (bounded ±1,8 kg). */
@@ -408,47 +449,91 @@ function interpPoint(points: ProjectionTrajectoryPoint[], day: number): Projecti
   };
 }
 
-type IntegrationCoreResult = Omit<IntegrationResult, 'bandLowPoints' | 'bandHighPoints'>;
+type IntegrationCoreResult = Omit<
+  IntegrationResult,
+  'bandLowPoints' | 'bandHighPoints' | 'scenarios'
+>;
+
+/** PRNG determinista (mulberry32): los mismos escenarios en cada render. */
+function mulberry32(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function randomNormal(rand: () => number): number {
+  let u = 0;
+  let v = 0;
+  while (u === 0) u = rand();
+  while (v === 0) v = rand();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+/**
+ * Incertidumbre de cada componente (≈intervalo del 90 %):
+ * - BMR: ±10 % (SEE de Mifflin/Cunningham ≈ 5–10 %).
+ * - PAL/NEAT: ±12 % (variabilidad de las categorías FAO/OMS).
+ * - Ingesta: ±10 % manual/objetivo y ±6 % registrada.
+ * - Termogénesis adaptativa: α con ±50 %.
+ * - Partición Forbes: ±20 %.
+ * - Agua: ±1,5 kg.
+ */
+function sampleVariant(rand: () => number, intakeSd: number): ProjectionVariant {
+  return {
+    bmrScale: clamp(1 + randomNormal(rand) * 0.06, 0.85, 1.15),
+    neatScale: clamp(1 + randomNormal(rand) * 0.075, 0.8, 1.2),
+    intakeScale: clamp(1 + randomNormal(rand) * intakeSd, 0.7, 1.3),
+    atScale: clamp(1 + randomNormal(rand) * 0.3, 0.2, 1.8),
+    partitionScale: clamp(1 + randomNormal(rand) * 0.1, 0.7, 1.3),
+    waterOffset: clamp(randomNormal(rand) * 0.75, -2, 2),
+  };
+}
 
 function integrateOnce(
   inputs: IntegrationInputs,
-  bmrScale: number,
-  intakeScale: number,
+  variant: ProjectionVariant,
+  options: { maxDays: number; stopAtTarget: boolean },
 ): IntegrationCoreResult {
   const m = inputs.m;
   const weight0 = m.weight > 0 ? m.weight : 0;
   const heightM = m.height > 0 ? m.height / 100 : 1.7;
   const summary = inputs.summary ?? trainingSummary([], []);
-  const intake = inputs.intakeKcal * intakeScale;
+  const intake = inputs.intakeKcal * variant.intakeScale;
   const fat0 = inputs.comp.fatMass ?? (weight0 > 0 ? 0.2 * weight0 : 0);
   const lean0 = inputs.comp.leanMass ?? Math.max(0, weight0 - fat0);
+  const maxDays = Math.max(0, options.maxDays);
+  // El EAT es lineal en el peso: se precalcula una vez por trayectoria.
+  const eatPerKg = trainingEatKcalPerDay(summary, inputs.declaredPerWeek ?? null, 1);
 
   const points: ProjectionTrajectoryPoint[] = [];
-  const push = (F: number, L: number, day: number, waterMax: number) => {
+  const pointDays: number[] = [];
+  const push = (F: number, L: number, day: number) => {
+    const water = clamp(
+      waterTransient(inputs.waterMax, day) + variant.waterOffset,
+      -WATER_MAX_KG * 1.25,
+      WATER_MAX_KG * 1.25,
+    );
     points.push({
       date: todayISO(addDays(inputs.now, day)),
-      fatMass: F,
-      leanMass: L,
+      fatMass: Math.max(0, F),
+      leanMass: Math.max(0, L),
       ffmi: L > 0 && heightM > 0 ? L / (heightM ** 2) : null,
-      scaleWeight: F + L + waterTransient(waterMax, day),
-      tissueWeight: F + L,
-      waterWeight: waterTransient(waterMax, day),
+      scaleWeight: Math.max(0, F + L + water),
+      tissueWeight: Math.max(0, F + L),
+      waterWeight: water,
     });
+    pointDays.push(day);
   };
 
-  const maxDays = inputs.goal === 'maintain' ? 0 : MAX_PROJECTION_DAYS;
-  // Transitorio de glucógeno/agua: cambio de ingesta frente al mantenimiento
-  // inicial, acotado a ±1,8 kg.
-  const tdee0 = computeEnergyExpenditure(
-    m, summary, inputs.declaredPerWeek ?? null, inputs.avgSteps,
-    inputs.activityLevel, inputs.intakeKcal, inputs.lang,
-  ).tdee;
-  const waterMax = clamp((inputs.intakeKcal - tdee0) * WATER_SCALE_PER_KG, -WATER_MAX_KG, WATER_MAX_KG);
-
-  let F = fat0;
-  let L = lean0;
+  let F = Math.max(0, fat0);
+  let L = Math.max(0, lean0);
   let at = 0;
-  push(F, L, 0, waterMax);
+  push(F, L, 0);
 
   const deltas: number[] = [];
   let weeklyRateKg = 0;
@@ -457,25 +542,30 @@ function integrateOnce(
   let reached = inputs.goal === 'maintain';
   let rateCapped = false;
   let days = 0;
-  let prevTissue = fat0 + lean0;
+  let prevTissue = F + L;
 
   if (maxDays > 0) {
     const effect = strengthEffect(inputs.strengthPerMonth);
-    // La banda de incertidumbre también modula el ritmo seguro: si la
-    // adherencia/metabolismo cae un 8 %, el tope efectivo cae con ella; si
-    // sube, el tope sube. Sin esto, un déficit agresivo hacía que las tres
-    // trayectorias chocaran con el mismo tope y la banda colapsara a un punto.
+    // Tope de ritmo seguro según peso y fuerza. Es una regla de seguridad, no
+    // una fuente de incertidumbre: se mantiene fija en todos los escenarios.
     const rateCap =
-      (inputs.goal === 'cut'
+      inputs.goal === 'cut'
         ? weight0 * (0.0075 + 0.0025 * effect)
-        : weight0 * (0.0025 + 0.0025 * effect)) * intakeScale;
+        : weight0 * (0.0025 + 0.0025 * effect);
 
     for (let day = 1; day <= maxDays; day += 1) {
       const W = F + L;
-      const B = dynamicBmr(m, L) * bmrScale;
-      const neat = activityBaseFactor(inputs.activityLevel) * B + walkingKcalPerDay(m, inputs.avgSteps);
+      const baseBmr = dynamicBmr(m, L);
+      const B = baseBmr * variant.bmrScale;
+      // NEAT = max(PAL sin ejercicio, pasos). No se suman: el PAL ya incluye
+      // caminar, así que los pasos actúan como suelo cuando implican más
+      // actividad que el nivel declarado.
+      const activityNeat =
+        (activityBaseFactor(inputs.activityLevel) - 1) * baseBmr * variant.neatScale;
+      const stepNeat = walkingKcalPerDay(inputs.avgSteps, W) * variant.neatScale;
+      const neat = Math.max(activityNeat, stepNeat);
       const tef = 0.10 * intake;
-      const eat = trainingEatKcalPerDay(summary, inputs.declaredPerWeek ?? null, W);
+      const eat = eatPerKg * W;
       const deltaE = intake - (B + tef + neat + eat - at);
       // Si el balance no empuja hacia el objetivo (sin superávit en déficit o
       // sin déficit en volumen), la proyección no avanza.
@@ -486,10 +576,12 @@ function integrateOnce(
         break;
       }
       // Termogénesis adaptativa: ΔE → AT exponencialmente (α ≈ 11 %, τ = 18 días).
-      at = at + (ADAPT_ALPHA * deltaE - at) / ADAPT_TAU_DAYS;
+      at = at + (ADAPT_ALPHA * variant.atScale * deltaE - at) / ADAPT_TAU_DAYS;
 
-      // Partición grasa/magra: curva de Forbes (10,4/F) modulada por fuerza.
-      const pForbes = 10.4 / Math.max(F, 1);
+      // Partición grasa/magra: curva de Forbes. La fracción magra es
+      // 10,4/(F+10,4), no 10,4/F; el tope evita perder masa magra en exceso
+      // cuando la grasa disponible es baja.
+      const pForbes = 10.4 / (Math.max(F, 1) + 10.4);
       const surplus = Math.max(0, deltaE);
       const deficit = Math.min(0, deltaE);
       let dL = 0;
@@ -497,7 +589,11 @@ function integrateOnce(
       if (surplus > 0) {
         // Superávit: la ganancia de masa magra escala con el estímulo de fuerza
         // (hasta ~45–55 % del excedente entrenado; ~20–25 % sin fuerza).
-        const pLeanGain = inputs.strengthPerMonth > 0 ? 0.5 : 0.25;
+        const pLeanGain = clamp(
+          (inputs.strengthPerMonth > 0 ? 0.5 : 0.25) * variant.partitionScale,
+          0.1,
+          0.7,
+        );
         const denominator = pLeanGain * RHO_LEAN_KCAL_KG + (1 - pLeanGain) * RHO_FAT_KCAL_KG;
         const weightChange = surplus / denominator;
         dL = pLeanGain * weightChange;
@@ -506,7 +602,10 @@ function integrateOnce(
         // Déficit: la fracción de pérdida que es magra se reduce con la fuerza
         // frecuente hasta un mínimo fisiológico (≈5–10 %), dirigiendo el
         // 90–95 % del déficit a la grasa libra.
-        const pLean = inputs.strengthPerMonth >= 12 ? STRENGTH_MIN_LEAN : Math.min(pForbes, 0.95);
+        const pLean =
+          inputs.strengthPerMonth >= 12
+            ? STRENGTH_MIN_LEAN
+            : clamp(pForbes * variant.partitionScale, 0.05, 0.4);
         const denominator = (1 - pLean) * RHO_FAT_KCAL_KG + pLean * RHO_LEAN_KCAL_KG;
         const weightChange = -deficit / denominator;
         dF = -(1 - pLean) * weightChange;
@@ -523,8 +622,9 @@ function integrateOnce(
         dL *= factor;
         rateCapped = true;
       }
-      F += dF;
-      L += dL;
+      F = Math.max(0, F + dF);
+      L = Math.max(0, L + dL);
+      if (F + L <= 0.5) break;
 
       const delta = F + L - prevTissue;
       prevTissue = F + L;
@@ -536,17 +636,17 @@ function integrateOnce(
       if (day === 7) weeklyRateKg = dailyRate * 7;
       finalWeeklyRateKg = dailyRate * 7;
 
-      if (inputs.targetWeight !== null) {
+      if (options.stopAtTarget && inputs.targetWeight !== null) {
         const want = inputs.goal === 'cut' ? inputs.targetWeight + 0.001 : inputs.targetWeight - 0.001;
         if ((inputs.goal === 'cut' && F + L <= want) || (inputs.goal === 'bulk' && F + L >= want)) {
           reached = true;
           // El último punto de la trayectoria es el día de llegada.
-          push(F, L, day, waterMax);
+          push(F, L, day);
           days = day;
           break;
         }
       }
-      if (day % 7 === 0 || day === maxDays) push(F, L, day, waterMax);
+      if (day % 7 === 0 || day === maxDays) push(F, L, day);
       days = day;
     }
   }
@@ -556,14 +656,21 @@ function integrateOnce(
   // visibles y expliquen que no habrá cambio de tejido. `days` se mantiene en
   // 0 para no convertir un mantenimiento en una proyección con fecha de llegada.
   if (points.length < 2) {
-    for (let day = 7; day <= FLAT_PROJECTION_DAYS; day += 7) {
-      push(F, L, day, 0);
-    }
+    const fillTo = maxDays > 0 ? maxDays : FLAT_PROJECTION_DAYS;
+    for (let day = 7; day <= fillTo; day += 7) push(F, L, day);
+    if (pointDays[pointDays.length - 1] < fillTo) push(F, L, fillTo);
+  } else if (!options.stopAtTarget && pointDays[pointDays.length - 1] < maxDays) {
+    // Escenarios de incertidumbre: se completa el horizonte en plano para
+    // poder comparar todos los percentiles en la misma fecha.
+    const lastDay = pointDays[pointDays.length - 1];
+    for (let day = lastDay + 7; day <= maxDays; day += 7) push(F, L, day);
+    if (pointDays[pointDays.length - 1] < maxDays) push(F, L, maxDays);
   }
 
   const last = points[points.length - 1];
   return {
     points,
+    pointDays,
     final: {
       scaleWeight: last ? last.scaleWeight : weight0,
       tissueWeight: last ? last.tissueWeight : F + L,
@@ -579,28 +686,79 @@ function integrateOnce(
   };
 }
 
-/**
- * Simulador fisiológico diario (dt = 1 día) de dos compartimentos
- * (Hall/Forbes + termogénesis adaptativa) más una banda de incertidumbre
- * de ±8 % de variabilidad metabólica y adherencia calórica.
- */
-function runProjectionIntegration(inputs: IntegrationInputs): IntegrationResult {
-  const main = integrateOnce(inputs, 1, 1);
-  const bandLow = integrateOnce(inputs, 0.92, 0.92);
-  const bandHigh = integrateOnce(inputs, 1.08, 1.08);
-  return {
-    ...main,
-    bandLowPoints: bandLow.points,
-    bandHighPoints: bandHigh.points,
-  };
+function percentile(values: number[], p: number): number {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const idx = (sorted.length - 1) * p;
+  const lo = Math.floor(idx);
+  const hi = Math.min(sorted.length - 1, lo + 1);
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
 }
 
-/** Interpolación de una trayectoria emitiendo un punto cada 7 días. */
+/** Peso de una trayectoria en un día concreto (interpolación lineal). */
+function weightAtDay(
+  points: ProjectionTrajectoryPoint[],
+  pointDays: number[],
+  day: number,
+): number {
+  if (!points.length) return 0;
+  if (day <= pointDays[0]) return points[0].scaleWeight;
+  const last = points.length - 1;
+  if (day >= pointDays[last]) return points[last].scaleWeight;
+  let lo = 0;
+  while (lo < last && pointDays[lo + 1] < day) lo += 1;
+  const hi = Math.min(last, lo + 1);
+  const span = pointDays[hi] - pointDays[lo];
+  const f = span > 0 ? (day - pointDays[lo]) / span : 0;
+  return points[lo].scaleWeight + (points[hi].scaleWeight - points[lo].scaleWeight) * f;
+}
 
-function weightProgress(start: number, current: number, target: number): number {
-  const total = target - start;
-  if (Math.abs(total) < 1e-6) return 1;
-  return clamp((current - start) / total, 0, 1);
+/**
+ * Simulador fisiológico diario (dt = 1 día) de dos compartimentos
+ * (Hall/Forbes + termogénesis adaptativa). La banda es un intervalo de
+ * predicción del 90 % (percentiles 5–95) obtenido con Monte Carlo sobre las
+ * incertidumbres publicadas de BMR, PAL/NEAT, ingesta, adaptación, partición
+ * y agua. Los escenarios no se detienen en el objetivo: así el intervalo
+ * describe el peso esperado en la fecha central y no colapsa a un punto.
+ */
+const UNCERTAINTY_SCENARIOS = 81;
+
+function runProjectionIntegration(inputs: IntegrationInputs): IntegrationResult {
+  const mainMaxDays = inputs.goal === 'maintain' ? 0 : MAX_PROJECTION_DAYS;
+  const main = integrateOnce(inputs, CENTRAL_VARIANT, {
+    maxDays: mainMaxDays,
+    stopAtTarget: true,
+  });
+  // Los escenarios se simulan hasta el horizonte máximo para poder calcular
+  // fechas de llegada lentas; los pesos se muestrean en la fecha central.
+  const scenarioMaxDays =
+    inputs.goal === 'maintain' ? FLAT_PROJECTION_DAYS : MAX_PROJECTION_DAYS;
+  const scenarios: IntegrationCoreResult[] = [];
+  const rand = mulberry32(0x9e3779b9);
+  for (let index = 0; index < UNCERTAINTY_SCENARIOS; index += 1) {
+    scenarios.push(
+      integrateOnce(inputs, sampleVariant(rand, inputs.intakeSd), {
+        maxDays: scenarioMaxDays,
+        stopAtTarget: false,
+      }),
+    );
+  }
+
+  const bandPoints = (p: number): ProjectionTrajectoryPoint[] =>
+    main.points.map((point, index) => {
+      const day = main.pointDays[index];
+      const values = scenarios.map((scenario) =>
+        weightAtDay(scenario.points, scenario.pointDays, day),
+      );
+      return { ...point, scaleWeight: percentile(values, p) };
+    });
+
+  return {
+    ...main,
+    bandLowPoints: bandPoints(0.05),
+    bandHighPoints: bandPoints(0.95),
+    scenarios,
+  };
 }
 
 /**
@@ -795,6 +953,25 @@ export function projectBody(
       ? targetWeight / (measures.height / 100) ** 2
       : null;
 
+  const dailyBreakdown = computeEnergyExpenditure(
+    measures,
+    summary ?? trainingSummary([], []),
+    options.declaredPerWeek ?? null,
+    avgSteps,
+    activityLevel ?? null,
+    intakeKcal,
+    lang,
+  );
+  // Transitorio de glucógeno/agua: cambio de ingesta frente al mantenimiento
+  // inicial, acotado a ±1,8 kg.
+  const waterMax = clamp(
+    (intakeKcal - dailyBreakdown.tdee) * WATER_SCALE_PER_KG,
+    -WATER_MAX_KG,
+    WATER_MAX_KG,
+  );
+  // La ingesta registrada con báscula es más fiable que la declarada de memoria.
+  const intakeSd = intakeSource === 'logged' ? 0.06 : intakeSource === 'manual' ? 0.10 : 0.08;
+
   // Simulador diario de dos compartimentos (Hall/Forbes + termogénesis
   // adaptativa): el BMR y el balance energético se recalculan con el peso
   // simulado, y la partición grasa/magra sigue la curva de Forbes
@@ -812,17 +989,10 @@ export function projectBody(
     targetWeight: targetWeight ?? measures.weight,
     summary,
     declaredPerWeek: options.declaredPerWeek ?? null,
+    intakeSd,
+    waterMax,
   });
   const horizonDays = integration.days;
-  const dailyBreakdown = computeEnergyExpenditure(
-    measures,
-    summary ?? trainingSummary([], []),
-    options.declaredPerWeek ?? null,
-    avgSteps,
-    activityLevel ?? null,
-    intakeKcal,
-    lang,
-  );
   const finalWeight = integration.final.scaleWeight;
   const bandLowWeight = integration.bandLowPoints.length
     ? integration.bandLowPoints[integration.bandLowPoints.length - 1].scaleWeight
@@ -880,9 +1050,9 @@ export function projectBody(
     );
   }
 
-  // Hitos: 4 puntos sobre la trayectoria de la simulación. La composición se
-  // interpola con el progreso de peso simulado, y la banda de incertidumbre
-  // aporta los rangos realistas (weightLow/weightHigh y fechas de llegada).
+  // Hitos: 4 puntos sobre la trayectoria de la simulación. La composición sale
+  // del propio integrador (Forbes), no de una interpolación al objetivo, y la
+  // banda del 90 % aporta los rangos de peso y fechas de llegada.
   const milestones: ProjectionMilestone[] = [];
   if (targetWeight !== null && horizonDays > 0) {
     const direction: 'down' | 'up' = goal === 'cut' ? 'down' : 'up';
@@ -894,28 +1064,31 @@ export function projectBody(
       const pointWeight = point.scaleWeight;
       const bandAt = (points: ProjectionTrajectoryPoint[]) =>
         interpPoint(points, projectedDay).scaleWeight;
-      const crossingDate = (points: ProjectionTrajectoryPoint[]): string => {
-        for (const p of points) {
-          if ((direction === 'down' && p.scaleWeight <= pointWeight) || (direction === 'up' && p.scaleWeight >= pointWeight)) {
-            return p.date;
+      const crossingDay = (scenario: ScenarioTrajectory): number => {
+        for (let i = 0; i < scenario.points.length; i += 1) {
+          const p = scenario.points[i];
+          if (
+            (direction === 'down' && p.scaleWeight <= pointWeight) ||
+            (direction === 'up' && p.scaleWeight >= pointWeight)
+          ) {
+            return scenario.pointDays[i];
           }
         }
-        return point.date;
+        // Si el escenario no cruza el peso en el horizonte máximo, la fecha
+        // superior queda en ese límite: la app no inventa una llegada.
+        return scenario.pointDays[scenario.pointDays.length - 1] ?? MAX_PROJECTION_DAYS;
       };
-      const progress = weightProgress(measures.weight, pointWeight, targetWeight);
-      let projectedFat: number | null = null;
-      let projectedFatMass: number | null = null;
-      let projectedLeanMass: number | null = null;
-
-      if (leanMass !== null && targetLeanMass !== null) {
-        projectedLeanMass = leanMass + (targetLeanMass - leanMass) * progress;
-        projectedFatMass = Math.max(0, pointWeight - projectedLeanMass);
-        projectedFat = pointWeight > 0 ? (projectedFatMass / pointWeight) * 100 : null;
-      } else if (leanMass !== null && pointWeight > 0) {
-        projectedFat = ((pointWeight - leanMass) / pointWeight) * 100;
-        projectedFatMass = pointWeight - leanMass;
-        projectedLeanMass = leanMass;
-      }
+      const crossingDays = integration.scenarios.map(crossingDay);
+      // La fecha central siempre queda dentro del intervalo del 90 %.
+      const dateLow = shiftDate(Math.min(projectedDay, percentile(crossingDays, 0.05)));
+      const dateHigh = shiftDate(Math.max(projectedDay, percentile(crossingDays, 0.95)));
+      const tissueWeight = point.tissueWeight;
+      const projectedFatMass = tissueWeight > 0 ? point.fatMass : null;
+      const projectedLeanMass = tissueWeight > 0 ? point.leanMass : null;
+      const projectedFat =
+        tissueWeight > 0 && projectedFatMass !== null
+          ? (projectedFatMass / tissueWeight) * 100
+          : null;
 
       const bandLowAt = bandAt(integration.bandLowPoints);
       const bandHighAt = bandAt(integration.bandHighPoints);
@@ -934,8 +1107,8 @@ export function projectBody(
             : null,
         weightLow: Math.min(pointWeight, bandLowAt, bandHighAt),
         weightHigh: Math.max(pointWeight, bandLowAt, bandHighAt),
-        dateLow: crossingDate(integration.bandLowPoints),
-        dateHigh: crossingDate(integration.bandHighPoints),
+        dateLow,
+        dateHigh,
       });
     }
   }
