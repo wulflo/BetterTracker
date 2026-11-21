@@ -83,13 +83,15 @@ Resultado final con datos reales:
 
 ## 6. Release y workflows
 
-- [ ] Revisar `git diff` y `git status`; no commitear artefactos ni `dist/`.
-- [ ] Commit en `main` con el mensaje de la release.
-- [ ] Push a `main` → dispara CI (workflow no manual).
-- [ ] Crear y pushear tag `v0.10.1` → dispara Release, que llama a CI y a
-  Linux packages (Snap + Flatpak).
-- [ ] No lanzar `store-msix` (solo `workflow_dispatch` manual).
-- [ ] No usar `gh run watch`; solo reportar las URLs de las ejecuciones.
+- [x] Revisar `git diff` y `git status`; sin artefactos ni `dist/`.
+- [x] Commit en `main`: `6a757f3 release: 0.10.1 — fix energy model and add
+  90% prediction interval`.
+- [x] Push a `main` → CI lanzado:
+  https://github.com/wulflo/BetterTracker/actions/runs/44879408038
+- [x] Tag `v0.10.1` creado y pusheado → Release lanzada (llama a CI y a
+  Linux packages): https://github.com/wulflo/BetterTracker/actions/runs/44879413858
+- [x] `store-msix` no se lanzó (solo `workflow_dispatch` manual).
+- [x] Sin `gh run watch`; solo se reportaron las URLs.
 
 ## Notas de continuación
 
