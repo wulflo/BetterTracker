@@ -461,10 +461,14 @@ function integrateOnce(
 
   if (maxDays > 0) {
     const effect = strengthEffect(inputs.strengthPerMonth);
+    // La banda de incertidumbre también modula el ritmo seguro: si la
+    // adherencia/metabolismo cae un 8 %, el tope efectivo cae con ella; si
+    // sube, el tope sube. Sin esto, un déficit agresivo hacía que las tres
+    // trayectorias chocaran con el mismo tope y la banda colapsara a un punto.
     const rateCap =
-      inputs.goal === 'cut'
+      (inputs.goal === 'cut'
         ? weight0 * (0.0075 + 0.0025 * effect)
-        : weight0 * (0.0025 + 0.0025 * effect);
+        : weight0 * (0.0025 + 0.0025 * effect)) * intakeScale;
 
     for (let day = 1; day <= maxDays; day += 1) {
       const W = F + L;

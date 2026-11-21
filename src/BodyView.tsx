@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import type { ActivityLevel, BodyMeasures, MeasurementEntry, Sex, VaultEvent } from './types';
+import type { ActivityLevel, BodyMeasures, GoalMode, MeasurementEntry, Sex, VaultEvent } from './types';
 import { EMPTY_MEASURES } from './types';
 import { appendEvent, newEvent } from './vault';
 import {
@@ -71,11 +71,26 @@ export default function BodyView({ deviceId, events, onRefresh, notify }: Props)
   });
   const training = projectionInputs.training;
   const steps = projectionInputs.steps;
+  const bmiRange = safeBmiRange(form.age, lang);
+  const fatRange = safeBodyFatRange(form.sex, form.age, lang);
+  // La proyección necesita un objetivo con dirección. Si el usuario está en
+  // "mantener" pero su composición queda fuera del rango saludable, se proyecta
+  // la referencia hacia ese rango en lugar de mostrar 5 filas idénticas.
+  const projectionGoal = useMemo<GoalMode>(() => {
+    if (goal !== 'maintain') return goal;
+    const fatHigh = comp.avg !== null && fatRange !== null && comp.avg > fatRange.max;
+    const fatLow = comp.avg !== null && fatRange !== null && comp.avg < fatRange.min;
+    const bmiHigh = comp.bmi !== null && comp.bmi > bmiRange.max;
+    const bmiLow = comp.bmi !== null && comp.bmi < bmiRange.min;
+    if (fatHigh || bmiHigh) return 'cut';
+    if (fatLow || bmiLow) return 'bulk';
+    return 'maintain';
+  }, [goal, comp.avg, comp.bmi, fatRange, bmiRange]);
   const projection = useMemo(
     () =>
       projectBody(
         form,
-        goal,
+        projectionGoal,
         training.weeklyMinutes,
         activity,
         comp,
@@ -92,7 +107,7 @@ export default function BodyView({ deviceId, events, onRefresh, notify }: Props)
       ),
     [
       form,
-      goal,
+      projectionGoal,
       training.weeklyMinutes,
       training.strengthPerMonth,
       training.effectivePerWeek,
@@ -109,8 +124,6 @@ export default function BodyView({ deviceId, events, onRefresh, notify }: Props)
     () => computeMacros(form, training.weeklyMinutes, goal, activity, lang, steps),
     [form, training.weeklyMinutes, goal, activity, lang, steps],
   );
-  const bmiRange = safeBmiRange(form.age, lang);
-  const fatRange = safeBodyFatRange(form.sex, form.age, lang);
   const bmiStatus = classifyValue(comp.bmi, bmiRange, lang);
   const fatStatus = classifyValue(comp.avg, fatRange, lang);
 
@@ -219,6 +232,18 @@ export default function BodyView({ deviceId, events, onRefresh, notify }: Props)
           </span>
         </div>
         <div className="card-body stack">
+          {projectionGoal !== goal && (
+            <div className="notice notice-info">
+              <Icon name="info" size={16} />
+              <div>
+                {tx(
+                  lang,
+                  'Tu objetivo está en «Mantener», pero tu composición está fuera del rango saludable: la proyección muestra la referencia hacia ese rango. Cambia el objetivo en el Panel para usarla como objetivo real.',
+                  'Your goal is set to “Maintain”, but your composition is outside the healthy range: the projection shows the reference toward that range. Change the goal in the Dashboard to use it as a real target.',
+                )}
+              </div>
+            </div>
+          )}
           <div className="grid grid-4">
             <div className="metric">
               <div className="metric-label">{tx(lang, 'IMC saludable', 'Healthy BMI')}</div>

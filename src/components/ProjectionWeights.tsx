@@ -29,6 +29,12 @@ export default function ProjectionWeights({
   lang,
 }: Props) {
   if (trajectory.length < 2) return null;
+  // Si el balance no cambia el tejido (mantenimiento real), no tiene sentido
+  // repetir cinco filas idénticas: se muestra el punto actual y se explica.
+  const flat = trajectory.every(
+    (point) => Math.abs(point.tissueWeight - trajectory[0].tissueWeight) < 0.05,
+  );
+  const rows = flat ? trajectory.slice(0, 1) : trajectory;
   const last = trajectory[trajectory.length - 1];
   const lastTissue = last.tissueWeight > 0 ? last.tissueWeight : last.fatMass + last.leanMass;
   const showTargetRow =
@@ -53,7 +59,9 @@ export default function ProjectionWeights({
             : ''}
         </span>
         <span className="small muted">
-          {tx(lang, `${trajectory.length} puntos proyectados`, `${trajectory.length} projected points`)}
+          {flat
+            ? tx(lang, 'sin cambio de peso proyectado', 'no projected weight change')
+            : tx(lang, `${rows.length} puntos proyectados`, `${rows.length} projected points`)}
         </span>
       </div>
       <div className="projection-weights-scroll">
@@ -68,11 +76,11 @@ export default function ProjectionWeights({
             </tr>
           </thead>
           <tbody>
-            {trajectory.map((point, index) => {
+            {rows.map((point, index) => {
               const tissue =
                 point.tissueWeight > 0 ? point.tissueWeight : point.fatMass + point.leanMass;
               const bodyFat = tissue > 0 ? (point.fatMass / tissue) * 100 : null;
-              const isFinal = index === trajectory.length - 1;
+              const isFinal = index === rows.length - 1 && !flat;
               return (
                 <tr
                   key={`${point.date}-${index}`}

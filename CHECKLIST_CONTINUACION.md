@@ -114,3 +114,18 @@ Si algo falla, revisa primero `src/metrics.test.ts` y `src/bodyRange.test.ts`.
    `docs/releases/v0.9.20.md`.
 7. [x] **Push + workflows**: commit(s), push a `main`, lanzar workflows
    manuales (`package-linux`, `store-msix`, `release` con tag `v0.9.20`).
+
+## Corrección 2 (2026-11-21): proyección y acento
+
+- [x] **Sidebar y topbar**: en modo claro usan `var(--bg-2)` en vez del tinte
+   violeta fijo, así siguen el acento activo.
+- [x] **Proyección útil en modo mantener**: si el objetivo es «Mantener» pero
+   la composición está fuera del rango saludable, la proyección muestra la
+   referencia hacia ese rango (con aviso) en vez de 5 filas idénticas.
+- [x] **Sin filas repetidas**: si el balance no cambia el tejido, la tabla
+   muestra solo el punto actual y «sin cambio de peso proyectado».
+- [x] **Banda de confianza**: el tope de ritmo seguro se escala con la
+   variabilidad (±8 %), así la banda no colapsa cuando el déficit es agresivo.
+- [x] **Etiqueta**: «5 puntos proyectados» en lugar de «4 semanas proyectadas».
+- [ ] **Verificación del usuario** en la app nativa.
+- [ ] **Re-lanzar workflows** solo cuando el usuario confirme (los canceló).
