@@ -99,7 +99,7 @@ jobs:
           test -f packaging/linux/deb-root/usr/share/icons/hicolor/512x512/apps/better-tracker.png
 
       - name: Upload .deb staging
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: linux-deb-root
           path: packaging/linux/deb-root
@@ -133,7 +133,7 @@ jobs:
         uses: snapcore/action-build@3bdaa03e1ba6bf59a65f84a751d943d549a54e79 # v1
 
       - name: Upload snap
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-snap
           path: ${{ steps.snapcraft.outputs.snap }}
@@ -211,7 +211,7 @@ jobs:
           upload-artifact: false
 
       - name: Upload Flatpak
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-flatpak
           path: BetterTracker_${{ needs.build-deb.outputs.version }}_x86_64.flatpak
