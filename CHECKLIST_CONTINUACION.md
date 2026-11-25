@@ -191,3 +191,6 @@ Si algo falla, revisa primero `src/metrics.test.ts` y `src/bodyRange.test.ts`.
 - [x] `npm run tauri dev` comprobado por el mantenedor.
 - [x] Push a `main`, tag `v0.10.2` y workflows lanzados (URLs en `CHECKLIST_v0.10.2.md`).
 - [x] PR de Dependabot **no incluidos** en esta versión (evaluados por separado).
+- [x] Primer CI/Release fallidos por RUSTSEC-2026-0592/0594 (`url`, `cookie`):
+  corregidos en `Cargo.lock` (`69f4a3b`), tag `v0.10.2` reubicado y relanzados.
+  Detalle en `CHECKLIST_v0.10.2.md` §5.

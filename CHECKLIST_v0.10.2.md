@@ -45,7 +45,23 @@ Sin cambios funcionales: `VAULT_SCHEMA_VERSION` sigue siendo `1`.
   https://github.com/wulflo/BetterTracker/actions/runs/45597632607
 - [x] Sin `gh run watch`; solo se reportan las URLs de las ejecuciones.
 - Nota: el push a `main` avisó de 1 alerta de seguridad moderada en Dependabot
-  (https://github.com/wulflo/BetterTracker/security/dependabot/16); no bloqueó el release.
+  (https://github.com/wulflo/BetterTracker/security/dependabot/16).
+
+## 5. Corrección del primer intento
+
+El CI y el Release del primer intento fallaron en `cargo-deny` por dos avisos:
+`RUSTSEC-2026-0592` (`url` 2.5.8) y `RUSTSEC-2026-0594` (`cookie` 0.18.2).
+No era un fallo del código de la app.
+
+- [x] `cargo update -p url --precise 2.5.9` y `cargo update -p cookie --precise 0.18.3`.
+- [x] `cargo deny check`: `advisories ok, bans ok, licenses ok, sources ok`.
+- [x] Commit `69f4a3b fix(deps): update url and cookie to advisory-fixed versions`.
+- [x] Tag `v0.10.2` reubicado de `2d0d673` a `69f4a3b` (force push; el release
+  anterior falló antes de publicar, así que no se publicó nada con el tag viejo).
+- [x] CI relanzado por el push: https://github.com/wulflo/BetterTracker/actions/runs/45598966215
+- [x] Release relanzado desde el tag corregido:
+  https://github.com/wulflo/BetterTracker/actions/runs/45598971841
+- [x] Release duplicado por dispatch manual cancelado (`45598972980`).
 
 ## Notas de continuación
 
