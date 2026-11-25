@@ -34,12 +34,18 @@ Sin cambios funcionales: `VAULT_SCHEMA_VERSION` sigue siendo `1`.
 
 ## 4. Release y workflows
 
-- [x] Commit en `main` con todos los cambios.
-- [x] Push a `main` → CI (`ci.yml`).
-- [x] Tag `v0.10.2` pusheado → `release.yml` (CI + builds + manifiestos + publicación).
-- [x] `package-linux.yml` lanzado a mano (`workflow_dispatch`, `publish: false`).
-- [x] `store-msix.yml` lanzado a mano (`workflow_dispatch`).
+- [x] Commit en `main`: `2d0d673 release: 0.10.2 — Estructure, skills y autor wulflo`.
+- [x] Push a `main` → CI (`ci.yml`):
+  https://github.com/wulflo/BetterTracker/actions/runs/45597547497
+- [x] Tag `v0.10.2` pusheado → `release.yml` (CI + builds + manifiestos + publicación):
+  https://github.com/wulflo/BetterTracker/actions/runs/45597576587
+- [x] `package-linux.yml` lanzado a mano (`workflow_dispatch`, `publish: false`, `channel: beta`):
+  https://github.com/wulflo/BetterTracker/actions/runs/45597625676
+- [x] `store-msix.yml` lanzado a mano (`workflow_dispatch`):
+  https://github.com/wulflo/BetterTracker/actions/runs/45597632607
 - [x] Sin `gh run watch`; solo se reportan las URLs de las ejecuciones.
+- Nota: el push a `main` avisó de 1 alerta de seguridad moderada en Dependabot
+  (https://github.com/wulflo/BetterTracker/security/dependabot/16); no bloqueó el release.
 
 ## Notas de continuación
 

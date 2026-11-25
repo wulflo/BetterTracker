@@ -189,5 +189,5 @@ Si algo falla, revisa primero `src/metrics.test.ts` y `src/bodyRange.test.ts`.
 - [x] `docs/VERSIONING.md`: Android, cinco claves de `latest.json` y ejemplo actualizado.
 - [x] `npx tsc --noEmit`, `npm test` (92), `npm run build`, `cargo check --locked`.
 - [x] `npm run tauri dev` comprobado por el mantenedor.
-- [ ] Push a `main`, tag `v0.10.2` y workflows lanzados (URLs en el checklist de la 0.10.2).
+- [x] Push a `main`, tag `v0.10.2` y workflows lanzados (URLs en `CHECKLIST_v0.10.2.md`).
 - [x] PR de Dependabot **no incluidos** en esta versión (evaluados por separado).
