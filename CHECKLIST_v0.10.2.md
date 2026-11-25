@@ -1,0 +1,50 @@
+# Checklist v0.10.2 — Estructure, skills y autor del instalador
+
+Versión: **0.10.2**. Tag: `v0.10.2`. Fecha: **2026-11-25**.
+Sin cambios funcionales: `VAULT_SCHEMA_VERSION` sigue siendo `1`.
+
+## 1. Alcance
+
+- [x] `docs/Estructure.md` (738 líneas): mapa técnico de Better Tracker.
+- [x] `.opencode/skills/estructure`, `estilo-ui`, `guia-de-uso`, `traducciones-ui`,
+  `busqueda-incremental` y `.opencode/commands/estructure-sync.md`.
+- [x] Autor del instalador: `bundle.publisher = "wulflo"` en `tauri.conf.json` y
+  `authors = ["wulflo"]` en `Cargo.toml` (el MSIX ya usaba `wulflo`).
+- [x] Sin cambios en lógica ni en dependencias. Los 11 PR de Dependabot quedan fuera.
+
+## 2. Verificación local
+
+- [x] `npx tsc --noEmit` sin errores.
+- [x] `npm test`: 9 archivos, 92 pruebas en verde.
+- [x] `npm run build` (Vite) correcto.
+- [x] `cargo check --locked --manifest-path src-tauri/Cargo.toml` correcto.
+- [x] `npm run tauri dev` comprobado por el mantenedor (arranque y UI sin errores).
+- [x] `node scripts/sync-version.mjs` sin diferencias posteriores.
+
+## 3. Bump y documentación
+
+- [x] `VERSION` = `0.10.2`.
+- [x] Sincronizados: `package.json`, `package-lock.json`, `tauri.conf.json`, `Cargo.toml`,
+  `Cargo.lock`, `snapcraft.yaml`, metainfo de Flatpak (Android no inicializado).
+- [x] README y README.es: badge y texto de versión actual.
+- [x] `docs/releases/v0.10.2.md`: notas de release.
+- [x] `docs/VERSIONING.md`: fila Android, cinco claves de `latest.json` y ejemplo actual.
+- [x] `docs/Estructure.md`: versión indexada 0.10.2.
+- [x] `CHECKLIST_CONTINUACION.md`: sección 0.10.1 marcada y sección 0.10.2 añadida.
+
+## 4. Release y workflows
+
+- [x] Commit en `main` con todos los cambios.
+- [x] Push a `main` → CI (`ci.yml`).
+- [x] Tag `v0.10.2` pusheado → `release.yml` (CI + builds + manifiestos + publicación).
+- [x] `package-linux.yml` lanzado a mano (`workflow_dispatch`, `publish: false`).
+- [x] `store-msix.yml` lanzado a mano (`workflow_dispatch`).
+- [x] Sin `gh run watch`; solo se reportan las URLs de las ejecuciones.
+
+## Notas de continuación
+
+- Repositorio: `/home/alonso/Documentos/Repositorios/BetterTracker`.
+- Si el push falla por red: repetir `git push origin main` y `git push origin v0.10.2`;
+  no rehacer el bump.
+- Si el release falla por firma/secreto, el draft queda creado: corregir el secreto y
+  relanzar el workflow con `gh workflow run release.yml -f tag=v0.10.2`.

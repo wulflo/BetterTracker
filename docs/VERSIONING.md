@@ -57,6 +57,7 @@ El workflow solo se dispara con tags `v*` o con `workflow_dispatch` (indicando u
 | Linux x86_64 | `.AppImage`, `.deb`, `.rpm`, `.snap`, `.flatpak` | El propio `.AppImage` + `.AppImage.sig` | `linux-x86_64` |
 | Windows x64 | NSIS `.exe`, `.msi` | El `.exe` de NSIS + `.exe.sig` (preferido; MSI como alternativa) | `windows-x86_64` |
 | Microsoft Store x64 | `.msix` (sin firmar; la Store lo firma) | — | — |
+| Android | APK firmada en `Descargas/BetterTracker` | La propia APK + SHA-256 en `latest.json` | `android-aarch64` |
 
 Tauri verifica la firma minisign del artefacto del updater antes de instalar. El `.deb` y `.rpm` no son artefactos de actualización automática; se descargan manualmente. El `.snap`, el `.flatpak` y el `.msix` se actualizan desde su tienda, no desde el updater de la app. El MSIX se genera aparte con `.github/workflows/store-msix.yml`; ver `docs/MICROSOFT_STORE.md`.
 
@@ -66,9 +67,9 @@ Es el manifiesto que lee el plugin updater. Se genera con `scripts/generate-upda
 
 ```json
 {
-  "version": "0.8.2",
+  "version": "0.10.2",
   "notes": "Notas del release",
-  "pub_date": "2026-10-26T00:00:00.000Z",
+  "pub_date": "2026-11-25T00:00:00.000Z",
   "platforms": {
     "linux-x86_64": { "signature": "...", "url": "https://github.com/.../download/v0.8.2/..." },
     "windows-x86_64": { "signature": "...", "url": "https://github.com/.../download/v0.8.2/..." }
@@ -82,7 +83,9 @@ El endpoint configurado es:
 https://github.com/wulflo/BetterTracker/releases/latest/download/latest.json
 ```
 
-El workflow exige las dos claves (`linux-x86_64`, `windows-x86_64`) antes de publicar. Si falta un build o una firma, el release queda en draft.
+El workflow usa `--require-all` y exige cinco claves antes de publicar: `linux-x86_64`,
+`linux-deb-x86_64`, `linux-rpm-x86_64`, `windows-x86_64` y `android-aarch64`. Si falta un
+build o una firma, la generación/validación del manifiesto falla y el draft queda sin publicar.
 
 ## `release-manifest.json` y `SHA256SUMS.txt`
 

@@ -165,14 +165,29 @@ Si algo falla, revisa primero `src/metrics.test.ts` y `src/bodyRange.test.ts`.
 
 ## Release 0.10.1 — predictor e intervalo científico
 
-- [ ] Revisión con datos reales de la bóveda (`/home/alonso/Descargas/Salud`).
-- [ ] NEAT sin doble conteo: `(PAL − 1) × BMR` y pasos como suelo.
-- [ ] Coste de caminar corregido a 0,45 kcal/kg/1000 pasos.
-- [ ] Curva de Forbes corregida a `10,4/(F + 10,4)`.
-- [ ] Intervalo de predicción del 90 % (Monte Carlo, 81 escenarios).
-- [ ] Hitos coherentes con la trayectoria simulada.
-- [ ] `VERSION` = `0.10.1` y manifiestos sincronizados.
-- [ ] README/README.es con la versión nueva.
-- [ ] Notas en `docs/releases/v0.10.1.md`.
-- [ ] Push a `main` y tag `v0.10.1` (dispara CI y Release).
-- [ ] No lanzar `store-msix` (manual) ni usar `gh run watch`.
+- [x] Revisión con datos reales de la bóveda (`/home/alonso/Descargas/Salud`).
+- [x] NEAT sin doble conteo: `(PAL − 1) × BMR` y pasos como suelo.
+- [x] Coste de caminar corregido a 0,45 kcal/kg/1000 pasos.
+- [x] Curva de Forbes corregida a `10,4/(F + 10,4)`.
+- [x] Intervalo de predicción del 90 % (Monte Carlo, 81 escenarios).
+- [x] Hitos coherentes con la trayectoria simulada.
+- [x] `VERSION` = `0.10.1` y manifiestos sincronizados.
+- [x] README/README.es con la versión nueva.
+- [x] Notas en `docs/releases/v0.10.1.md`.
+- [x] Push a `main` y tag `v0.10.1` (dispara CI y Release).
+- [x] No lanzar `store-msix` (manual) ni usar `gh run watch`.
+
+## Release 0.10.2 — Estructure, skills y autor del instalador
+
+- [x] `docs/Estructure.md` creado con el mapa técnico de la app.
+- [x] Skills `.opencode/` adaptadas de SinNotas (Estructure, Estilo UI, Guía de uso,
+  Traducciones UI, Búsqueda incremental) y comando `/estructure-sync`.
+- [x] `bundle.publisher` = `wulflo` en `tauri.conf.json` y `authors` = `wulflo` en Cargo.toml.
+- [x] `VERSION` = `0.10.2` y `node scripts/sync-version.mjs` ejecutado.
+- [x] README/README.es con la versión nueva.
+- [x] `docs/releases/v0.10.2.md`: notas de release.
+- [x] `docs/VERSIONING.md`: Android, cinco claves de `latest.json` y ejemplo actualizado.
+- [x] `npx tsc --noEmit`, `npm test` (92), `npm run build`, `cargo check --locked`.
+- [x] `npm run tauri dev` comprobado por el mantenedor.
+- [ ] Push a `main`, tag `v0.10.2` y workflows lanzados (URLs en el checklist de la 0.10.2).
+- [x] PR de Dependabot **no incluidos** en esta versión (evaluados por separado).

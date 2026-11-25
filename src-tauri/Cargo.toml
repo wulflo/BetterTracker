@@ -1,8 +1,8 @@
 [package]
 name = "better-tracker"
-version = "0.10.1"
+version = "0.10.2"
 description = "Better Fitness Tracker"
-authors = ["better-tracker"]
+authors = ["wulflo"]
 license = "MIT"
 edition = "2021"
 
