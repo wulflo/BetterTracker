@@ -59,9 +59,10 @@ No era un fallo del código de la app.
 - [x] Tag `v0.10.2` reubicado de `2d0d673` a `69f4a3b` (force push; el release
   anterior falló antes de publicar, así que no se publicó nada con el tag viejo).
 - [x] CI relanzado por el push: https://github.com/wulflo/BetterTracker/actions/runs/45598966215
-- [x] Release relanzado desde el tag corregido:
-  https://github.com/wulflo/BetterTracker/actions/runs/45598971841
-- [x] Release duplicado por dispatch manual cancelado (`45598972980`).
+- [x] Las dos ejecuciones de Release creadas justo después del force-push del tag
+  (`45598971841` y `45598972980`) desaparecieron al reubicar `v0.10.2` (HTTP 404), por lo
+  que se lanzó una sola ejecución definitiva desde el tag ya corregido:
+  https://github.com/wulflo/BetterTracker/actions/runs/45599732912
 
 ## Notas de continuación
 
