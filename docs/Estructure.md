@@ -51,7 +51,7 @@
 | `docs/KEYSTORES.md` / `docs/RELEASE_SECRETS.md` | Claves de firma, keystore Android y secretos. | Firmar artefactos. |
 | `docs/MICROSOFT_STORE.md` | Identidad MSIX y flujo de Partner Center. | Publicar en la Store. |
 | `DECISIONES.md` | Por qué se eligió cada arquitectura (HTTP/TLS, bóveda, actualizaciones, UI). | Contexto histórico. |
-| `CHECKLIST_CONTINUACION.md`, `docs/AVANCES.md`, `docs/releases/v*.md` | Estado y trazabilidad de fases. | Seguimiento de trabajo. |
+| `docs/AVANCES.md`, `docs/releases/v*.md` | Estado y trazabilidad de fases. | Seguimiento de trabajo. |
 | `PRIVACY_POLICY.md` / `THIRD_PARTY_LICENSES.md` | Privacidad y licencias. | Cumplimiento. |
 
 ---
@@ -641,7 +641,7 @@ versiones y SHAs de actions; no tocan lógica de la app.
 | `docs/KEYSTORES.md` / `docs/RELEASE_SECRETS.md` | Claves y secretos. |
 | `docs/MICROSOFT_STORE.md` | Identidad MSIX. |
 | `DECISIONES.md` / `CONTRIBUTING.md` | Decisiones de diseño y reglas de contribución. |
-| `docs/AVANCES.md`, `CHECKLIST_CONTINUACION.md`, `docs/releases/v*.md` | Estado e hitos. |
+| `docs/AVANCES.md`, `docs/releases/v*.md` | Estado e hitos. |
 | `docs/CHECKLIST_SEGURIDAD.md` | Fases de endurecimiento (contiene evidencia congelada: verificar antes de citar). |
 | `docs/CHECKLIST_*SCANER*.md`, `docs/REVISION_APPS_LIBRES_ESCANER.md` | Históricas: el escáner de cámara se retiró en 0.9.9. |
 
