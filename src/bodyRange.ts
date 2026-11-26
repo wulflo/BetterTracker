@@ -8,12 +8,11 @@
  * peso por semana al perder grasa y ≈0,25–0,5 % al ganar).
  */
 import type { Lang } from './i18n';
-import { tx } from './i18n';
+import { plural, tx } from './i18n';
 import type { ActivityLevel, BodyMeasures, GoalMode, Sex } from './types';
 import {
   addDays,
   activityBaseFactor,
-  bmrMifflin,
   bodyComposition,
   clamp,
   computeEnergyExpenditure,
@@ -25,6 +24,7 @@ import {
   type EnergyBreakdown,
   type TrainingSummary,
 } from './metrics';
+import { bmrAgeAdjusted as dynamicBmr, walkingKcalPerDay } from './energy';
 
 export interface SafeRange {
   min: number;
@@ -67,6 +67,8 @@ export interface ProjectionMilestone {
   dateLow: string;
   /** Percentil 95 de la fecha de llegada. */
   dateHigh: string;
+  /** Escenarios Monte Carlo que no alcanzaron este hito en el horizonte. */
+  unreachedScenarios?: number;
 }
 
 export type ProjectionTargetSource = 'composition' | 'bmi' | 'maintain' | 'none';
@@ -134,7 +136,7 @@ export interface BodyProjection {
   adaptiveThermogenesis: number;
 }
 /** ≈3 sesiones de fuerza por semana: estímulo completo para conservar masa magra. */
-export const STRENGTH_SESSIONS_PER_MONTH_FULL = 12;
+const STRENGTH_SESSIONS_PER_MONTH_FULL = 12;
 
 /** 0 sin fuerza registrada, 1 con ≥12 sesiones al mes. */
 export function strengthFactor(perMonth: number): number {
@@ -159,7 +161,11 @@ export function formatProjectionDuration(weeks: number, lang: Lang = 'es'): stri
     const months = Math.max(1, Math.round(total / (52 / 12)));
     return tx(lang, `${months} meses`, `${months} months`);
   }
-  return tx(lang, `${total} semana(s)`, `${total} week(s)`);
+  return tx(
+    lang,
+    `${total} ${plural(lang, total, 'semana', 'semanas')}`,
+    `${total} ${plural(lang, total, 'week', 'weeks')}`,
+  );
 }
 
 /** IMC saludable. En mayores de 65 se acepta un margen algo mayor (22–27). */
@@ -206,6 +212,9 @@ export function safeBmiRange(age: number, lang: Lang = 'es'): SafeRange {
  */
 export function safeBodyFatRange(sex: Sex, age: number, lang: Lang = 'es'): SafeRange | null {
   if (sex === 'unspecified') return null;
+  const youngNote = age > 0 && age < 20
+    ? tx(lang, 'Menores de 20 años: interpretar con percentiles pediátricos.', 'Under 20: interpret with pediatric percentiles.')
+    : null;
   if (sex === 'male') {
     if (age >= 60) {
       return {
@@ -227,7 +236,7 @@ export function safeBodyFatRange(sex: Sex, age: number, lang: Lang = 'es'): Safe
       min: 8,
       max: 19,
       label: tx(lang, '% grasa 8–19', 'Body fat 8–19%'),
-      note: tx(lang, 'Referencia para hombres de 20–39 años.', 'Reference for men aged 20–39.'),
+      note: youngNote ?? tx(lang, 'Referencia para hombres de 20–39 años.', 'Reference for men aged 20–39.'),
     };
   }
   if (age >= 60) {
@@ -250,7 +259,7 @@ export function safeBodyFatRange(sex: Sex, age: number, lang: Lang = 'es'): Safe
     min: 21,
     max: 32,
     label: tx(lang, '% grasa 21–32', 'Body fat 21–32%'),
-    note: tx(lang, 'Referencia para mujeres de 20–39 años.', 'Reference for women aged 20–39.'),
+    note: youngNote ?? tx(lang, 'Referencia para mujeres de 20–39 años.', 'Reference for women aged 20–39.'),
   };
 }
 
@@ -319,11 +328,16 @@ const RHO_FAT_KCAL_KG = 9400;
 const RHO_LEAN_KCAL_KG = 1800;
 /** Cap de transitorio de glucógeno/agua (kg). */
 const WATER_MAX_KG = 1.8;
-/** Escala del transitorio de glucógeno/agua por kcal de ingesta frente al mantenimiento inicial. */
-const WATER_SCALE_PER_KG = 0.010;
-/** α: 11 % del desbalance energético que se refleja en la termogénesis adaptativa. */
+/** Escala del transitorio de glucógeno/agua: ±1,8 kg con ±720 kcal de desbalance. */
+const WATER_SCALE_PER_KG = 0.0025;
+/**
+ * α: 11 % del desbalance que se refleja en la termogénesis adaptativa.
+ * Heurística de producto: Hall (2010) describe el inicio de la adaptación con
+ * τ ≈ 7 días y parámetros ajustados al experimento de Minnesota. Aquí se usa
+ * una respuesta más lenta (18 días) para suavizar la proyección semanal.
+ */
 const ADAPT_ALPHA = 0.11;
-/** τ: 18 días de constante de la termogénesis adaptativa. */
+/** τ (heurística, ver ADAPT_ALPHA): 18 días. */
 const ADAPT_TAU_DAYS = 18;
 /** Longitud máxima de la simulación del balance energético. */
 const MAX_PROJECTION_DAYS = 1095;
@@ -402,25 +416,29 @@ interface IntegrationResult {
   finalAt: number;
 }
 
+/** Mismo factor que `strengthFactor`, sin repetir la fórmula. */
 function strengthEffect(strengthPerMonth: number): number {
-  return clamp(strengthPerMonth / 12, 0, 1);
-}
-
-/** BMR dinámico: promedio entre Katch-McArdle/Cunningham y Mifflin-St Jeor. */
-function dynamicBmr(m: BodyMeasures, lean: number): number {
-  if (lean > 0) {
-    return (370 + 21.6 * lean + 500 + 22 * lean) / 2;
-  }
-  return bmrMifflin(m.weight > 0 ? m.weight : 70, m.height > 0 ? m.height : 170, m.age > 0 ? m.age : 30, m.sex);
+  return strengthFactor(strengthPerMonth);
 }
 
 /**
- * Gasto neto de caminar: ≈0,45 kcal por kg y por 1000 pasos. Equivale a
- * ≈0,5 kcal/kg/km con 1000 pasos ≈ 0,75 km, el valor habitual en la
- * literatura. Se calcula con el peso simulado de cada día.
+ * La edad modula la partición: con los años se pierde más masa magra en
+ * déficit y se gana menos en superávit (Forbes, Heymsfield 2014); en
+ * adolescentes el crecimiento compensa parte de la pérdida. Son factores
+ * heurísticos acotados, no constantes publicadas.
  */
-function walkingKcalPerDay(avgSteps: number, weight: number): number {
-  return avgSteps > 0 ? (avgSteps / 1000) * 0.45 * (weight > 0 ? weight : 70) : 0;
+function ageLeanFactor(age: number): number {
+  if (!Number.isFinite(age) || age <= 0) return 1;
+  if (age >= 65) return 1.3;
+  if (age < 18) return 0.85;
+  return 1;
+}
+
+function ageGainFactor(age: number): number {
+  if (!Number.isFinite(age) || age <= 0) return 1;
+  if (age >= 65) return 0.8;
+  if (age < 18) return 1.15;
+  return 1;
 }
 
 /** Transitorio de glucógeno/agua tras un cambio de ingesta vs mantenimiento inicial (bounded ±1,8 kg). */
@@ -428,11 +446,20 @@ function waterTransient(waterMax: number, day: number): number {
   return waterMax * (1 - Math.exp(-Math.max(0, day) / 4));
 }
 
-function interpPoint(points: ProjectionTrajectoryPoint[], day: number): ProjectionTrajectoryPoint {
+function interpPoint(
+  points: ProjectionTrajectoryPoint[],
+  day: number,
+  days?: number[],
+): ProjectionTrajectoryPoint {
   if (!points.length) {
     return { date: '', fatMass: 0, leanMass: 0, ffmi: null, scaleWeight: 0, tissueWeight: 0, waterWeight: 0 };
   }
-  const idx = clamp(day / 7, 0, points.length - 1);
+  // Los puntos son semanales salvo el punto final de llegada y los rellenos
+  // del horizonte: si se conocen sus días reales, se usan en vez de asumir
+  // `índice × 7` (antes sesgaba los hitos de proyectaciones cortas).
+  const idx = days && days.length === points.length
+    ? clamp(day / (days[days.length - 1] || 1) * (points.length - 1), 0, points.length - 1)
+    : clamp(day / 7, 0, points.length - 1);
   const lo = Math.floor(idx);
   const hi = Math.min(points.length - 1, lo + 1);
   const f = idx - lo;
@@ -490,7 +517,7 @@ function sampleVariant(rand: () => number, intakeSd: number): ProjectionVariant 
     intakeScale: clamp(1 + randomNormal(rand) * intakeSd, 0.7, 1.3),
     atScale: clamp(1 + randomNormal(rand) * 0.3, 0.2, 1.8),
     partitionScale: clamp(1 + randomNormal(rand) * 0.1, 0.7, 1.3),
-    waterOffset: clamp(randomNormal(rand) * 0.75, -2, 2),
+    waterOffset: clamp(randomNormal(rand) * 0.75, -WATER_MAX_KG, WATER_MAX_KG),
   };
 }
 
@@ -515,8 +542,8 @@ function integrateOnce(
   const push = (F: number, L: number, day: number) => {
     const water = clamp(
       waterTransient(inputs.waterMax, day) + variant.waterOffset,
-      -WATER_MAX_KG * 1.25,
-      WATER_MAX_KG * 1.25,
+      -WATER_MAX_KG,
+      WATER_MAX_KG,
     );
     points.push({
       date: todayISO(addDays(inputs.now, day)),
@@ -548,10 +575,12 @@ function integrateOnce(
     const effect = strengthEffect(inputs.strengthPerMonth);
     // Tope de ritmo seguro según peso y fuerza. Es una regla de seguridad, no
     // una fuente de incertidumbre: se mantiene fija en todos los escenarios.
-    const rateCap =
-      inputs.goal === 'cut'
-        ? weight0 * (0.0075 + 0.0025 * effect)
-        : weight0 * (0.0025 + 0.0025 * effect);
+    // Ritmo más conservador en mayores (sarcopenia) y en adolescentes.
+    const ageRateFactor = inputs.m.age >= 65 ? 0.75 : inputs.m.age > 0 && inputs.m.age < 18 ? 0.85 : 1;
+    const rateCapPerKg =
+      (inputs.goal === 'cut'
+        ? 0.0075 + 0.0025 * effect
+        : 0.0025 + 0.0025 * effect) * ageRateFactor;
 
     for (let day = 1; day <= maxDays; day += 1) {
       const W = F + L;
@@ -589,8 +618,11 @@ function integrateOnce(
       if (surplus > 0) {
         // Superávit: la ganancia de masa magra escala con el estímulo de fuerza
         // (hasta ~45–55 % del excedente entrenado; ~20–25 % sin fuerza).
+        // Transición suave: 25 % sin estímulo → 50 % con fuerza completa,
+        // sin salto al pasar de 0 a 1 sesión.
         const pLeanGain = clamp(
-          (inputs.strengthPerMonth > 0 ? 0.5 : 0.25) * variant.partitionScale,
+          (0.25 + 0.25 * strengthEffect(inputs.strengthPerMonth)) *
+            variant.partitionScale * ageGainFactor(inputs.m.age),
           0.1,
           0.7,
         );
@@ -602,10 +634,16 @@ function integrateOnce(
         // Déficit: la fracción de pérdida que es magra se reduce con la fuerza
         // frecuente hasta un mínimo fisiológico (≈5–10 %), dirigiendo el
         // 90–95 % del déficit a la grasa libra.
-        const pLean =
-          inputs.strengthPerMonth >= 12
-            ? STRENGTH_MIN_LEAN
-            : clamp(pForbes * variant.partitionScale, 0.05, 0.4);
+        // Forbes con clamp 5–40 % sin fuerza; interpolación suave hasta el
+        // mínimo heurístico del 7,5 % con fuerza completa (antes había un
+        // salto discontinuo en exactamente 12 sesiones/mes).
+        const forbesLean = clamp(pForbes * variant.partitionScale, 0.05, 0.4);
+        const pLean = clamp(
+          (forbesLean + (STRENGTH_MIN_LEAN - forbesLean) * strengthEffect(inputs.strengthPerMonth)) *
+            ageLeanFactor(inputs.m.age),
+          0.05,
+          0.4,
+        );
         const denominator = (1 - pLean) * RHO_FAT_KCAL_KG + pLean * RHO_LEAN_KCAL_KG;
         const weightChange = -deficit / denominator;
         dF = -(1 - pLean) * weightChange;
@@ -615,7 +653,9 @@ function integrateOnce(
       // segura del peso y la fuerza (definición: 0,75 % + 0,25 % por semana
       // con fuerza completa; volumen: 0,25 % + 0,25 %).
       const movement = Math.abs(dF + dL);
-      const dailyCap = rateCap / 7;
+      // El tope se recalcula con el peso simulado de cada día: un 1 % fijo
+      // del peso inicial se volvería demasiado agresivo al adelgazar.
+      const dailyCap = (W * rateCapPerKg) / 7;
       if (movement > dailyCap) {
         const factor = dailyCap / movement;
         dF *= factor;
@@ -875,8 +915,17 @@ export function projectBody(
   const baseTargetFat = targetBodyFat(goal, measures.sex, fatRange);
   const intakeKcal = hasIntake ? declaredIntake : macros.kcal;
   const intakeSource: IntakeSource = hasIntake ? (options.intakeSource ?? 'manual') : 'target';
-  const delta = intakeKcal - macros.tdee;
-  const deficitPct = macros.tdee > 0 ? (delta / macros.tdee) * 100 : null;
+  const dailyBreakdown = computeEnergyExpenditure(
+    measures,
+    summary ?? trainingSummary([], []),
+    options.declaredPerWeek ?? null,
+    avgSteps,
+    activityLevel ?? null,
+    intakeKcal,
+    lang,
+  );
+  const delta = intakeKcal - dailyBreakdown.tdee;
+  const deficitPct = dailyBreakdown.tdee > 0 ? (delta / dailyBreakdown.tdee) * 100 : null;
   const maxBmi = bmiRange.max;
   const minBmi = bmiRange.min;
 
@@ -953,15 +1002,11 @@ export function projectBody(
       ? targetWeight / (measures.height / 100) ** 2
       : null;
 
-  const dailyBreakdown = computeEnergyExpenditure(
-    measures,
-    summary ?? trainingSummary([], []),
-    options.declaredPerWeek ?? null,
-    avgSteps,
-    activityLevel ?? null,
-    intakeKcal,
-    lang,
-  );
+  // Ingesta de mantenimiento coherente con el desglose: TDEE = base + 0,10·I,
+  // por lo que I = base/0,9 (la TEF se recalcula al cambiar la ingesta).
+  const maintenanceBase =
+    dailyBreakdown.bmr + dailyBreakdown.neat + dailyBreakdown.eat;
+  const maintenanceKcal = maintenanceBase > 0 ? Math.round(maintenanceBase / 0.9) : null;
   // Transitorio de glucógeno/agua: cambio de ingesta frente al mantenimiento
   // inicial, acotado a ±1,8 kg.
   const waterMax = clamp(
@@ -1000,8 +1045,10 @@ export function projectBody(
   const bandHighWeight = integration.bandHighPoints.length
     ? integration.bandHighPoints[integration.bandHighPoints.length - 1].scaleWeight
     : finalWeight;
-  const weightLow = Math.min(finalWeight, bandLowWeight, bandHighWeight);
-  const weightHigh = Math.max(finalWeight, bandLowWeight, bandHighWeight);
+  // El intervalo es literalmente p5–p95: incluir el valor central sólo lo
+  // ensancharía cuando la distribución está sesgada.
+  const weightLow = integration.bandLowPoints.length ? bandLowWeight : finalWeight;
+  const weightHigh = integration.bandHighPoints.length ? bandHighWeight : finalWeight;
   const weeklyRateKg = goal === 'maintain' ? 0 : integration.weeklyRateKg;
   const finalWeeklyRateKg = goal === 'maintain' ? 0 : integration.finalWeeklyRateKg;
   const weeks = goal === 'maintain' ? 0 : Math.max(0, Math.round(horizonDays / 7));
@@ -1026,8 +1073,8 @@ export function projectBody(
     warnings.push(
       tx(
         lang,
-        `El déficit equivale al ${Math.abs(Math.round(deficitPct))} % de tu gasto. Por encima del 25–30 % suele ser difícil mantener la masa magra y la adherencia; plantea un déficit más moderado.`,
-        `The deficit is ${Math.abs(Math.round(deficitPct))}% of your expenditure. Above 25–30% it is usually hard to preserve lean mass and adherence; consider a more moderate deficit.`,
+        `El déficit equivale al ${Math.abs(Math.round(deficitPct))} % de tu gasto. A partir del 30 % suele ser difícil mantener la masa magra y la adherencia; plantea un déficit más moderado.`,
+        `The deficit is ${Math.abs(Math.round(deficitPct))}% of your expenditure. At 30% or more it is usually hard to preserve lean mass and adherence; consider a more moderate deficit.`,
       ),
     );
   }
@@ -1060,11 +1107,11 @@ export function projectBody(
     for (let index = 1; index <= steps; index += 1) {
       const fraction = index / steps;
       const projectedDay = horizonDays * fraction;
-      const point = interpPoint(integration.points, projectedDay);
+      const point = interpPoint(integration.points, projectedDay, integration.pointDays);
       const pointWeight = point.scaleWeight;
       const bandAt = (points: ProjectionTrajectoryPoint[]) =>
-        interpPoint(points, projectedDay).scaleWeight;
-      const crossingDay = (scenario: ScenarioTrajectory): number => {
+        interpPoint(points, projectedDay, integration.pointDays).scaleWeight;
+      const crossingDay = (scenario: ScenarioTrajectory): number | null => {
         for (let i = 0; i < scenario.points.length; i += 1) {
           const p = scenario.points[i];
           if (
@@ -1074,14 +1121,23 @@ export function projectBody(
             return scenario.pointDays[i];
           }
         }
-        // Si el escenario no cruza el peso en el horizonte máximo, la fecha
-        // superior queda en ese límite: la app no inventa una llegada.
-        return scenario.pointDays[scenario.pointDays.length - 1] ?? MAX_PROJECTION_DAYS;
+        // Un escenario que no alcanza el hito no cuenta como «llegada en 3 años»:
+        // se excluye del percentil y se informa por separado.
+        return null;
       };
-      const crossingDays = integration.scenarios.map(crossingDay);
-      // La fecha central siempre queda dentro del intervalo del 90 %.
-      const dateLow = shiftDate(Math.min(projectedDay, percentile(crossingDays, 0.05)));
-      const dateHigh = shiftDate(Math.max(projectedDay, percentile(crossingDays, 0.95)));
+      const crossingDays = integration.scenarios
+        .map(crossingDay)
+        .filter((day): day is number => day !== null);
+      const unreachedScenarios = integration.scenarios.length - crossingDays.length;
+      // La fecha central se mantiene dentro del intervalo para que la curva
+      // no muestre hitos «fuera de rango»; los escenarios que no cruzan ya no
+      // fuerzan el extremo superior hasta el horizonte máximo.
+      const dateLow = shiftDate(
+        Math.min(projectedDay, crossingDays.length ? percentile(crossingDays, 0.05) : projectedDay),
+      );
+      const dateHigh = shiftDate(
+        Math.max(projectedDay, crossingDays.length ? percentile(crossingDays, 0.95) : projectedDay),
+      );
       const tissueWeight = point.tissueWeight;
       const projectedFatMass = tissueWeight > 0 ? point.fatMass : null;
       const projectedLeanMass = tissueWeight > 0 ? point.leanMass : null;
@@ -1105,10 +1161,11 @@ export function projectBody(
           projectedLeanMass !== null && Number.isFinite(projectedLeanMass)
             ? projectedLeanMass
             : null,
-        weightLow: Math.min(pointWeight, bandLowAt, bandHighAt),
-        weightHigh: Math.max(pointWeight, bandLowAt, bandHighAt),
+        weightLow: bandLowAt,
+        weightHigh: bandHighAt,
         dateLow,
         dateHigh,
+        unreachedScenarios,
       });
     }
   }
@@ -1230,13 +1287,13 @@ export function projectBody(
     message = hasIntake
       ? tx(
           lang,
-          `Con una ingesta media de ${Math.round(intakeKcal)} kcal y un gasto de ${Math.round(macros.tdee)} kcal, tu balance es ${delta > 0 ? '+' : ''}${Math.round(delta)} kcal/día. Para mantener el peso, ajusta la ingesta a unas ${Math.round(macros.tdee)} kcal/día.`,
-          `With an average intake of ${Math.round(intakeKcal)} kcal and an expenditure of ${Math.round(macros.tdee)} kcal, your balance is ${delta > 0 ? '+' : ''}${Math.round(delta)} kcal/day. To maintain your weight, adjust intake to about ${Math.round(macros.tdee)} kcal/day.`,
+          `Con una ingesta media de ${Math.round(intakeKcal)} kcal y un gasto de ${Math.round(dailyBreakdown.tdee)} kcal, tu balance es ${delta > 0 ? '+' : ''}${Math.round(delta)} kcal/día. Para mantener el peso, ajusta la ingesta a unas ${maintenanceKcal ?? '—'} kcal/día.`,
+          `With an average intake of ${Math.round(intakeKcal)} kcal and an expenditure of ${Math.round(dailyBreakdown.tdee)} kcal, your balance is ${delta > 0 ? '+' : ''}${Math.round(delta)} kcal/day. To maintain your weight, adjust intake to about ${maintenanceKcal ?? '—'} kcal/day.`,
         )
       : tx(
           lang,
-          `Con ${Math.round(macros.kcal)} kcal/día mantienes el peso actual. Tu TDEE estimado es ${Math.round(macros.tdee)} kcal.`,
-          `With ${Math.round(macros.kcal)} kcal/day you maintain your current weight. Your estimated TDEE is ${Math.round(macros.tdee)} kcal.`,
+          `Con ${maintenanceKcal ?? '—'} kcal/día mantienes el peso actual (incluye la TEF). Tu TDEE estimado es ${Math.round(dailyBreakdown.tdee)} kcal.`,
+          `With ${maintenanceKcal ?? '—'} kcal/day you maintain your current weight (TEF included). Your estimated TDEE is ${Math.round(dailyBreakdown.tdee)} kcal.`,
         );
   } else if (weeks === 0) {
     if (targetWeight === null) {
@@ -1254,14 +1311,14 @@ export function projectBody(
     } else if (goal === 'cut') {
       message = tx(
         lang,
-        `Con tu ingesta media de ${Math.round(intakeKcal)} kcal y un gasto de ${Math.round(macros.tdee)} kcal no hay déficit: la proyección no avanza. Reduce la ingesta o aumenta la actividad; con el objetivo de ${Math.round(macros.kcal)} kcal sí habría déficit.`,
-        `With your average intake of ${Math.round(intakeKcal)} kcal and an expenditure of ${Math.round(macros.tdee)} kcal there is no deficit: the projection does not progress. Reduce intake or increase activity; with the target of ${Math.round(macros.kcal)} kcal there would be a deficit.`,
+        `Con tu ingesta media de ${Math.round(intakeKcal)} kcal y un gasto de ${Math.round(dailyBreakdown.tdee)} kcal no hay déficit: la proyección no avanza. Reduce la ingesta o aumenta la actividad; con el objetivo de ${Math.round(macros.kcal)} kcal sí habría déficit.`,
+        `With your average intake of ${Math.round(intakeKcal)} kcal and an expenditure of ${Math.round(dailyBreakdown.tdee)} kcal there is no deficit: the projection does not progress. Reduce intake or increase activity; with the target of ${Math.round(macros.kcal)} kcal there would be a deficit.`,
       );
     } else {
       message = tx(
         lang,
-        `Con tu ingesta media de ${Math.round(intakeKcal)} kcal y un gasto de ${Math.round(macros.tdee)} kcal no hay superávit: la proyección no avanza. Aumenta la ingesta o reduce la actividad; con el objetivo de ${Math.round(macros.kcal)} kcal sí habría superávit.`,
-        `With your average intake of ${Math.round(intakeKcal)} kcal and an expenditure of ${Math.round(macros.tdee)} kcal there is no surplus: the projection does not progress. Increase intake or reduce activity; with the target of ${Math.round(macros.kcal)} kcal there would be a surplus.`,
+        `Con tu ingesta media de ${Math.round(intakeKcal)} kcal y un gasto de ${Math.round(dailyBreakdown.tdee)} kcal no hay superávit: la proyección no avanza. Aumenta la ingesta o reduce la actividad; con el objetivo de ${Math.round(macros.kcal)} kcal sí habría superávit.`,
+        `With your average intake of ${Math.round(intakeKcal)} kcal and an expenditure of ${Math.round(dailyBreakdown.tdee)} kcal there is no surplus: the projection does not progress. Increase intake or reduce activity; with the target of ${Math.round(macros.kcal)} kcal there would be a surplus.`,
       );
     }
   } else {
@@ -1297,7 +1354,7 @@ export function projectBody(
     strengthPerMonth: Math.round(strength * 10) / 10,
     weeklyRateKg,
     finalWeeklyRateKg,
-    dailyKcalDelta: Math.round(intakeKcal - macros.tdee),
+    dailyKcalDelta: Math.round(intakeKcal - dailyBreakdown.tdee),
     deficitPct: deficitPct !== null && Number.isFinite(deficitPct) ? deficitPct : null,
     avgIntakeKcal: hasIntake ? Math.round(intakeKcal) : null,
     intakeSource,

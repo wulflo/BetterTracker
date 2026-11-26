@@ -47,15 +47,15 @@ const NODES: Array<{
   y: number;
   labelLeft?: boolean;
 }> = [
-  { key: 'neck', label: 'Cuello', labelEn: 'Neck', x: 150, y: 90 },
+  { key: 'neck', label: 'Cuello', labelEn: 'Neck', x: 150, y: 88 },
   { key: 'chest', label: 'Pecho', labelEn: 'Chest', x: 150, y: 132 },
   { key: 'waist', label: 'Cintura', labelEn: 'Waist', x: 150, y: 190 },
   { key: 'abdomen', label: 'Abdomen', labelEn: 'Abdomen', x: 150, y: 214, labelLeft: true },
-  { key: 'hip', label: 'Cadera', labelEn: 'Hip', x: 150, y: 240 },
+  { key: 'hip', label: 'Cadera', labelEn: 'Hip', x: 150, y: 244 },
   { key: 'arm', label: 'Brazo', labelEn: 'Arm', x: 72, y: 160 },
   { key: 'forearm', label: 'Antebrazo', labelEn: 'Forearm', x: 64, y: 208 },
-  { key: 'thigh', label: 'Muslo', labelEn: 'Thigh', x: 126, y: 320 },
-  { key: 'calf', label: 'Pantorrilla', labelEn: 'Calf', x: 128, y: 382 },
+  { key: 'thigh', label: 'Muslo', labelEn: 'Thigh', x: 124, y: 318 },
+  { key: 'calf', label: 'Pantorrilla', labelEn: 'Calf', x: 128, y: 380 },
   { key: 'wrist', label: 'Muñeca', labelEn: 'Wrist', x: 54, y: 246 },
 ];
 
@@ -69,7 +69,6 @@ export default function BodyFigure({
   const { lang } = useLanguage();
   const svgRef = useRef<SVGSVGElement>(null);
   const [dragging, setDragging] = useState<string | null>(null);
-
   const valueOf = (key: keyof BodyMeasures): number => {
     const v = Number(measures[key]);
     if (Number.isFinite(v) && v > 0) return v;
@@ -102,7 +101,6 @@ export default function BodyFigure({
     const y = ((e.clientY - rect.top) / rect.height) * 420;
     const distance = Math.hypot(x - 150, y - 120);
     const lim = limitsFor(key, measures.sex);
-    // Dragging outward from the body center increases the circumference.
     const normalized = clamp((distance - 42) / 118, 0, 1);
     setValue(key, lim.min + normalized * (lim.max - lim.min));
   };
@@ -112,124 +110,96 @@ export default function BodyFigure({
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
     } catch {
-      // Ignore if capture was already released.
+      // La captura ya se liberó.
     }
   };
 
-  const chest = 38 + scaleOf('chest') * 26;
+  const male = measures.sex === 'male';
+  const female = measures.sex === 'female';
+  const chest = 36 + scaleOf('chest') * 26;
   const waistKey = measures.waist > 0 ? 'waist' : 'abdomen';
-  const waist = 29 + scaleOf(waistKey) * 20;
-  const hip = 35 + scaleOf('hip') * 25;
-  const arm = 10 + scaleOf('arm') * 9;
-  const thigh = 18 + scaleOf('thigh') * 13;
-  const calf = 9 + scaleOf('calf') * 9;
-  const neck = 11 + scaleOf('neck') * 5;
+  const waist = 27 + scaleOf(waistKey) * 20;
+  const hip = 33 + scaleOf('hip') * 25;
+  const shoulder = chest + (male ? 7 : female ? -1 : 3);
+  const hipWidth = hip + (male ? -5 : female ? 7 : 0);
+  const waistWidth = waist + (male ? 0 : female ? -2 : -1);
+  const arm = 9 + scaleOf('arm') * 8;
+  const thigh = 17 + scaleOf('thigh') * 12;
+  const calf = 9 + scaleOf('calf') * 8;
+  const neck = 10 + scaleOf('neck') * 5;
+
+  const limb = (d: string, width: number, key: string) => (
+    <g key={key}>
+      <path d={d} fill="none" stroke="var(--outline-variant)" strokeWidth={width + 3} strokeLinecap="round" opacity="0.75" />
+      <path d={d} fill="none" stroke="url(#figure-fill)" strokeWidth={width} strokeLinecap="round" />
+    </g>
+  );
 
   return (
     <div className="body-figure">
-      <svg ref={svgRef} viewBox="0 0 300 420" role="img" aria-label={tx(lang, 'Figura corporal adaptativa', 'Adaptive body figure')}>
+      <svg
+        ref={svgRef}
+        viewBox="0 0 300 420"
+        role="img"
+        aria-label={tx(lang, 'Figura corporal adaptativa', 'Adaptive body figure')}
+      >
         <defs>
-          <linearGradient id="figure-fill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--primary-strong)" stopOpacity="0.95" />
-            <stop offset="55%" stopColor="var(--primary-deep)" stopOpacity="0.85" />
-            <stop offset="100%" stopColor="var(--primary-container)" stopOpacity="0.8" />
-          </linearGradient>
-          <linearGradient id="figure-stroke" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="var(--on-primary-container)" />
-            <stop offset="100%" stopColor="var(--primary)" />
+          <linearGradient id="figure-fill" x1="0" y1="0" x2="0.7" y2="1">
+            <stop offset="0%" stopColor="var(--primary-strong)" stopOpacity="0.92" />
+            <stop offset="60%" stopColor="var(--primary)" stopOpacity="0.82" />
+            <stop offset="100%" stopColor="var(--primary-container)" stopOpacity="0.72" />
           </linearGradient>
         </defs>
 
-        <ellipse cx="150" cy="214" rx="82" ry="172" fill="url(#figure-fill)" opacity="0.08" />
+        {/* Guía sutil: eje central y aureola, sin sombras difusas. */}
+        <circle cx="150" cy="212" r="156" fill="var(--surface-1)" opacity="0.35" />
+        <line x1="150" y1="70" x2="150" y2="406" stroke="var(--outline-variant)" strokeDasharray="4 7" strokeWidth="1" opacity="0.6" />
 
         {/* Cabeza y cuello */}
-        <circle cx="150" cy="54" r="31" fill="url(#figure-fill)" stroke="url(#figure-stroke)" strokeWidth="2" />
+        <circle cx="150" cy="52" r="26" fill="url(#figure-fill)" stroke="var(--primary)" strokeWidth="2" />
         <path
-          d={`M${150 - neck} 82 L${150 + neck} 82 L${150 + neck + 5} 100 L${150 - neck - 5} 100 Z`}
+          d={`M${150 - neck} 76 L${150 + neck} 76 L${150 + neck + 4} 100 L${150 - neck - 4} 100 Z`}
           fill="url(#figure-fill)"
-          stroke="url(#figure-stroke)"
+          stroke="var(--primary)"
           strokeWidth="1.5"
         />
 
-        {/* Torso */}
+        {/* Torso continuo, con hombros y caderas según la silueta elegida. */}
         <path
-          d={`M${150 - chest} 112
-              C${150 - chest - 9} 150, ${150 - waist} 168, ${150 - waist} 198
-              C${150 - waist} 224, ${150 - hip} 238, ${150 - hip} 252
-              L${150 + hip} 252
-              C${150 + hip} 238, ${150 + waist} 224, ${150 + waist} 198
-              C${150 + waist} 168, ${150 + chest + 9} 150, ${150 + chest} 112
-              C${150 + 18} 100, ${150 - 18} 100, ${150 - chest} 112 Z`}
+          d={`M${150 - shoulder} 112
+              C${150 - shoulder - 7} 142, ${150 - waistWidth} 168, ${150 - waistWidth} 198
+              C${150 - waistWidth} 224, ${150 - hipWidth} 234, ${150 - hipWidth} 252
+              L${150 + hipWidth} 252
+              C${150 + hipWidth} 234, ${150 + waistWidth} 224, ${150 + waistWidth} 198
+              C${150 + waistWidth} 168, ${150 + shoulder + 7} 142, ${150 + shoulder} 112
+              C${150 + 16} 102, ${150 - 16} 102, ${150 - shoulder} 112 Z`}
           fill="url(#figure-fill)"
-          stroke="url(#figure-stroke)"
+          stroke="var(--primary)"
           strokeWidth="2"
         />
 
-        {/* Hombros */}
-        <ellipse cx={150 - chest + 4} cy="118" rx={arm + 9} ry="14" fill="url(#figure-fill)" opacity="0.92" stroke="url(#figure-stroke)" strokeWidth="1.2" />
-        <ellipse cx={150 + chest - 4} cy="118" rx={arm + 9} ry="14" fill="url(#figure-fill)" opacity="0.92" stroke="url(#figure-stroke)" strokeWidth="1.2" />
-
-        {/* Brazos */}
-        <path
-          d={`M${150 - chest - 2} 124 Q${150 - chest - arm - 13} 170 ${150 - chest - arm - 7} 246`}
-          fill="none"
-          stroke="url(#figure-fill)"
-          strokeWidth={arm * 2}
-          strokeLinecap="round"
-        />
-        <path
-          d={`M${150 + chest + 2} 124 Q${150 + chest + arm + 13} 170 ${150 + chest + arm + 7} 246`}
-          fill="none"
-          stroke="url(#figure-fill)"
-          strokeWidth={arm * 2}
-          strokeLinecap="round"
-        />
-
-        {/* Piernas */}
-        <path
-          d={`M${150 - hip + 8} 250 Q${150 - hip + 4} 300 ${150 - 26} 348`}
-          fill="none"
-          stroke="url(#figure-fill)"
-          strokeWidth={thigh * 2}
-          strokeLinecap="round"
-        />
-        <path
-          d={`M${150 + hip - 8} 250 Q${150 + hip - 4} 300 ${150 + 26} 348`}
-          fill="none"
-          stroke="url(#figure-fill)"
-          strokeWidth={thigh * 2}
-          strokeLinecap="round"
-        />
-        <path
-          d={`M${150 - 26} 352 Q${150 - 24} 386 ${150 - 22} 404`}
-          fill="none"
-          stroke="url(#figure-fill)"
-          strokeWidth={calf * 2}
-          strokeLinecap="round"
-        />
-        <path
-          d={`M${150 + 26} 352 Q${150 + 24} 386 ${150 + 22} 404`}
-          fill="none"
-          stroke="url(#figure-fill)"
-          strokeWidth={calf * 2}
-          strokeLinecap="round"
-        />
+        {limb(`M${150 - shoulder + 3} 122 Q${150 - shoulder - arm - 12} 172 ${150 - shoulder - arm - 4} 246`, arm * 2, 'arm-l')}
+        {limb(`M${150 + shoulder - 3} 122 Q${150 + shoulder + arm + 12} 172 ${150 + shoulder + arm + 4} 246`, arm * 2, 'arm-r')}
+        {limb(`M${150 - hip + 8} 252 Q${150 - hipWidth + 2} 300 ${150 - 26} 348`, thigh * 2, 'thigh-l')}
+        {limb(`M${150 + hip - 8} 252 Q${150 + hipWidth - 2} 300 ${150 + 26} 348`, thigh * 2, 'thigh-r')}
+        {limb(`M${150 - 26} 352 Q${150 - 24} 386 ${150 - 22} 404`, calf * 2, 'calf-l')}
+        {limb(`M${150 + 26} 352 Q${150 + 24} 386 ${150 + 22} 404`, calf * 2, 'calf-r')}
 
         {/* Nodos arrastrables */}
         {NODES.map((node) => {
           const active = dragging === node.key;
           const value = valueOf(node.key);
           const toRight = node.labelLeft ? false : node.x >= 150;
-          const dx = toRight ? 14 : -14;
+          const dx = toRight ? 13 : -13;
           const anchor = toRight ? 'start' : 'end';
           return (
             <g key={node.key}>
               <circle
                 cx={node.x}
                 cy={node.y}
-                r={active ? 9 : 7}
-                fill={active ? 'var(--warning)' : 'var(--primary)'}
-                stroke="#24124a"
+                r={active ? 9 : 6.5}
+                fill={active ? 'var(--primary)' : 'var(--surface-1)'}
+                stroke="var(--primary)"
                 strokeWidth="2"
                 style={{ cursor: 'grab' }}
                 onPointerDown={onPointerDown(node.key)}
@@ -247,10 +217,10 @@ export default function BodyFigure({
         })}
       </svg>
       <div className="figure-caption">
-        <span>{tx(lang, 'Arrastra los nodos hacia fuera para aumentar la medida.', 'Drag the nodes outwards to increase the measurement.')}</span>
+        <span>{tx(lang, 'La silueta sigue el sexo del formulario de medidas. Arrastra los nodos hacia fuera para aumentar la medida.', 'The silhouette follows the sex from the measurement form. Drag the nodes outwards to increase the measurement.')}</span>
         {measures.sex === 'unspecified' && (
           <span className="badge badge-muted">
-            {tx(lang, 'Sexo sin especificar: límites neutros', 'Sex unspecified: neutral limits')}
+            {tx(lang, 'Sexo sin especificar en los cálculos', 'Sex unspecified in calculations')}
           </span>
         )}
       </div>

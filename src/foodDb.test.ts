@@ -1,8 +1,10 @@
+import { DISH_ROWS } from './data/dishes';
 import { describe, expect, it } from 'vitest';
 import type { Food, FoodLogItem, VaultEvent } from './types';
 import {
   FOODS,
   barcodeVariants,
+  looksLikeBarcodeInput,
   calcFood,
   findFoodByBarcode,
   foodUnits,
@@ -20,6 +22,29 @@ function event(kind: string, payload: Record<string, unknown>, timestamp = '2026
 }
 
 describe('food database', () => {
+  it('valida los 500 platos añadidos: formato y macros coherentes', () => {
+    expect(DISH_ROWS).toHaveLength(500);
+    const ids = new Set(DISH_ROWS.map((row) => row[0]));
+    const names = new Set(DISH_ROWS.map((row) => row[1]));
+    expect(ids.size).toBe(500);
+    expect(names.size).toBe(500);
+    for (const [, name, category, kcal, protein, carbs, fat, fiber, units] of DISH_ROWS) {
+      expect(name.trim()).toBe(name);
+      expect(name).not.toMatch(/<[^>]*>/);
+      expect(['carne','pescado','huevo','cereal','legumbre','verdura','lacteo','fruto_seco','grasa','bebida','condimento','dulce','procesado','suplemento','otro','fruta']).toContain(category);
+      expect(Math.abs(kcal - (4 * protein + 4 * carbs + 9 * fat))).toBeLessThanOrEqual(Math.max(20, kcal * 0.05));
+      expect(fiber).toBeLessThanOrEqual(carbs);
+      expect(kcal).toBeLessThanOrEqual(900);
+      expect(units && Object.values(units).every((g) => g > 0)).toBe(true);
+    }
+    const references = DISH_ROWS.filter((row) => row[9] === 'reference');
+    expect(references).toHaveLength(8);
+    expect(DISH_ROWS.filter((row) => row[9] === 'estimate')).toHaveLength(492);
+    expect(DISH_ROWS.every((row) => typeof row[10] === 'number' && (row[10] ?? 0) > 0)).toBe(true);
+    expect(searchFoods(FOODS, 'paella', 5, 'en').length).toBeGreaterThan(0);
+    expect(searchFoods(FOODS, 'hamburger', 5, 'en').length).toBeGreaterThan(0);
+  });
+
   it('bundles hundreds of common foods with gram and portion units', () => {
     expect(FOODS.length).toBeGreaterThanOrEqual(180);
     const chicken = FOODS.find((food) => food.id === 'pollo_pechuga');
@@ -94,6 +119,11 @@ describe('food database', () => {
     expect(barcodeVariants('8412345678905')).toContain('08412345678905');
     expect(barcodeVariants('123')).toEqual([]);
     expect(barcodeVariants('no-es-un-codigo')).toEqual([]);
+    expect(looksLikeBarcodeInput('8412 3456 7890 5')).toBe(true);
+    expect(looksLikeBarcodeInput('8412-3456-7890-5')).toBe(true);
+    expect(looksLikeBarcodeInput('pollo 123456')).toBe(false);
+    expect(looksLikeBarcodeInput('12345')).toBe(false);
+
   });
 
   it('finds products by barcode across UPC/EAN zero padding', () => {

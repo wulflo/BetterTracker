@@ -366,13 +366,6 @@ pub fn get_vault_info(app: AppHandle) -> VaultInfo {
     vault_info(&app)
 }
 
-#[tauri::command]
-pub fn get_vault_path(app: AppHandle) -> Option<String> {
-    load_config(&app)
-        .vault_path
-        .filter(|value| !value.trim().is_empty())
-}
-
 /* ------------------------------------------------------------------ */
 /* Layout local y migración                                           */
 /* ------------------------------------------------------------------ */
@@ -2249,6 +2242,33 @@ mod tests {
         assert_eq!(events.len(), 2);
         assert!(events.iter().any(|event| event.id == "current"));
         assert!(events.iter().any(|event| event.id == "only-in-snapshot"));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn retention_keeps_the_oldest_restorable_snapshot() {
+        let root = temp_dir("retention-restore");
+        let backup_root = root.join(BACKUP_DIR);
+        // Ocho días: al podar debe desaparecer el primero y el resto debe
+        // seguir siendo restaurable (CI ejecuta esta prueba en cargo test).
+        for day in 1..=8 {
+            let dir = backup_root.join("device-a").join(format!("2026-11-{day:02}"));
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join(EVENTS_FILE), b"x").unwrap();
+            fs::write(dir.join(BACKUP_MARKER), b"ok\n").unwrap();
+        }
+        prune_local_device_backups(&root, "device-a").unwrap();
+
+        let deleted = backup_root.join("device-a").join("2026-11-01");
+        assert!(!deleted.exists(), "the oldest snapshot is deleted, not hidden");
+        let remaining = list_local_backups(&root, "device-a").unwrap();
+        assert_eq!(remaining.len(), BACKUP_RETENTION);
+
+        let oldest_kept = backup_root.join("device-a").join("2026-11-02");
+        assert!(oldest_kept.is_dir(), "the oldest retained snapshot can be restored");
+        let result = restore_local_snapshot(&root, "device-a/2026-11-02").unwrap();
+        assert_eq!(result.source_events, 0, "placeholder file has no valid events");
 
         let _ = fs::remove_dir_all(root);
     }

@@ -9,7 +9,6 @@ import type {
   Reminder,
   Routine,
   Session,
-  Sex,
   VaultEvent,
   WeightEntry,
   Workout,
@@ -20,7 +19,10 @@ import type {
 import type { Lang } from './i18n';
 import { locale, tx } from './i18n';
 import { EMPTY_MEASURES } from './types';
-import { ZONES, ZONE_MAP, type ZoneId, zoneForExercise, zoneName } from './zones';
+import { ZONES, type ZoneId, zoneForExercise, zoneName } from './zones';
+import { bmrAgeAdjusted, bmrDynamic, bmrEquationLabel, walkingKcalPerDay } from './energy';
+export { bmrDynamic } from './energy';
+export { bmrMifflin } from './energy';
 
 export const DAY_MS = 86_400_000;
 
@@ -49,11 +51,6 @@ export function daysBetween(a: string, b: string): number {
 export function formatShort(date: string, lang: Lang = 'es'): string {
   const d = parseISO(date);
   return d.toLocaleDateString(locale(lang), { day: '2-digit', month: 'short' });
-}
-
-export function formatLong(date: string, lang: Lang = 'es'): string {
-  const d = parseISO(date);
-  return d.toLocaleDateString(locale(lang), { weekday: 'long', day: 'numeric', month: 'long' });
 }
 
 /**
@@ -218,10 +215,6 @@ export function activityOption(level: ActivityLevel, lang: Lang = 'es'): Activit
   return { ...base, label: en.label, short: en.short, description: en.description };
 }
 
-export function activityOptions(lang: Lang = 'es'): ActivityOption[] {
-  return [AUTO_ACTIVITY, ...ACTIVITY_LEVELS].map((option) => activityOption(option.id, lang));
-}
-
 /**
  * Pasos diarios medios como proxy de la actividad espontánea (NEAT). Los
  * cortes son heurísticos: no sustituyen al nivel declarado, pero evitan
@@ -340,11 +333,31 @@ export function visibleTrainingEvents(events: VaultEvent[]): VaultEvent[] {
   });
 }
 
+/** Enlaces de vídeo aceptados en la descripción de un ejercicio. */
+const EXERCISE_VIDEO_URL = /^https:\/\/(?:www\.|m\.)?(?:youtube\.com\/|youtu\.be\/|vimeo\.com\/)/i;
+
 export function reduceExercises(events: VaultEvent[]): Exercise[] {
   const map = new Map<string, Exercise>();
   for (const ev of events) {
-    if (ev.kind === 'exercise.upsert') map.set(ev.payload.id, ev.payload as Exercise);
-    else if (ev.kind === 'exercise.delete') map.delete(ev.payload.id);
+    if (ev.kind === 'exercise.upsert') {
+      const raw = ev.payload as Exercise;
+      const ex: Exercise = {
+        id: raw.id,
+        name: raw.name,
+        zone: raw.zone,
+        muscle: raw.muscle,
+        type: raw.type,
+      };
+      // Los eventos antiguos no tienen estos campos: se ignoran valores rotos
+      // en vez de propagarlos a la interfaz.
+      if (typeof raw.description === 'string' && raw.description.trim()) {
+        ex.description = raw.description.slice(0, 2000);
+      }
+      if (typeof raw.videoUrl === 'string' && EXERCISE_VIDEO_URL.test(raw.videoUrl)) {
+        ex.videoUrl = raw.videoUrl.slice(0, 500);
+      }
+      map.set(raw.id, ex);
+    } else if (ev.kind === 'exercise.delete') map.delete(ev.payload.id);
   }
   return Array.from(map.values());
 }
@@ -368,10 +381,27 @@ export function reducePRs(events: VaultEvent[]): PR[] {
 }
 
 export function reduceWeights(events: VaultEvent[]): WeightEntry[] {
-  return events
-    .filter((e) => e.kind === 'weight.logged')
-    .map((e) => e.payload as WeightEntry)
-    .sort((a, b) => a.date.localeCompare(b.date));
+  // El peso se puede registrar con «Registrar peso» (weight.logged) o editando
+  // el campo de peso en Medidas (measurement.saved). Ambas fuentes deben
+  // alimentar la curva: si solo se lee la primera, un mes editando Medidas
+  // deja el historial vacío. Si coinciden en fecha, gana el evento más reciente.
+  const byDate = new Map<string, WeightEntry>();
+  for (const e of events) {
+    let entry: WeightEntry | null = null;
+    if (e.kind === 'weight.logged') {
+      const payload = e.payload as WeightEntry;
+      if (typeof payload?.date === 'string' && Number.isFinite(payload.kg) && payload.kg > 0) {
+        entry = { date: payload.date, kg: payload.kg };
+      }
+    } else if (e.kind === 'measurement.saved') {
+      const payload = e.payload as MeasurementEntry;
+      if (typeof payload?.date === 'string' && Number.isFinite(payload.weight) && payload.weight > 0) {
+        entry = { date: payload.date, kg: payload.weight };
+      }
+    }
+    if (entry) byDate.set(entry.date, entry);
+  }
+  return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
 }
 
 export function reduceMeasurements(events: VaultEvent[]): MeasurementEntry[] {
@@ -854,15 +884,6 @@ export interface ComputeMacrosOptions {
   declaredIntake?: number;
 }
 
-/**
- * Gasto basal con Mifflin-St Jeor. Se expone porque la proyección lo recalcula
- * semana a semana con el peso simulado, no solo con el peso actual.
- */
-export function bmrMifflin(weight: number, height: number, age: number, sex: Sex): number {
-  const sexConst = sex === 'male' ? 5 : sex === 'female' ? -161 : -78;
-  return 10 * weight + 6.25 * height - 5 * age + sexConst;
-}
-
 /* ------------------------------------------------------------------ */
 /* Gasto energético continuo (BMR dinámico, TEF, NEAT, EAT)          */
 /* ------------------------------------------------------------------ */
@@ -904,26 +925,6 @@ export function activityBaseFactor(level: ActivityLevel | null): number {
 }
 
 /**
- * BMR dinámico: con masa magra estimada promedia Katch-McArdle y
- * Cunningham; sin ellos usa Mifflin-St Jeor.
- */
-function bmrDynamic(m: BodyMeasures, lean: number): number {
-  const weight = m.weight > 0 ? m.weight : 70;
-  if (lean > 0) {
-    return (370 + 21.6 * lean + 500 + 22 * lean) / 2;
-  }
-  return bmrMifflin(weight, m.height > 0 ? m.height : 170, m.age > 0 ? m.age : 30, m.sex);
-}
-
-/**
- * Gasto neto continuo de caminar: ≈0,45 kcal × kg × (pasos/1000)/día.
- * Equivale a ≈0,5 kcal/kg/km con 1000 pasos ≈ 0,75 km.
- */
-function walkingKcalPerDay(avgSteps: number, weight: number): number {
-  return avgSteps > 0 ? (avgSteps / 1000) * 0.45 * (weight > 0 ? weight : 70) : 0;
-}
-
-/**
  * Gasto por sesión de entrenamiento usando `estimateTraining` y los MET
  * netos (≈4,5 en fuerza, ≈6,5 en cardio/mixto); promediado diariamente
  * (sesiones/semana ÷ 7) con el peso actual.
@@ -953,9 +954,10 @@ export function computeEnergyExpenditure(
   activityLevel: ActivityLevel | null,
   intakeKcal: number,
   lang: Lang = 'es',
+  ageAwareBmr = true,
 ): EnergyBreakdown {
   const comp = bodyComposition(m, lang);
-  const bmr = bmrDynamic(m, comp.leanMass ?? 0);
+  const bmr = ageAwareBmr ? bmrAgeAdjusted(m, comp.leanMass ?? 0) : bmrDynamic(m, comp.leanMass ?? 0);
   const tef = 0.10 * intakeKcal;
   // El PAL ya incluye caminar: los pasos son un suelo, no un sumando. Se usa
   // el mayor entre la actividad declarada y el gasto implícito de los pasos.
@@ -1030,6 +1032,13 @@ export function computeMacros(
       ),
     );
   }
+  notes.push(
+    tx(
+      lang,
+      `BMR calculado con ${bmrEquationLabel(m, lang)}.`,
+      `BMR calculated with ${bmrEquationLabel(m, lang)}.`,
+    ),
+  );
   notes.push(
     tx(
       lang,
@@ -1714,20 +1723,20 @@ function fatPercentFromLean(m: BodyMeasures, ffm: number): number {
 /**
  * Fuerza Aérea de EE. UU. — hombres (Fuchs et al., 1978). Predice el FFM a
  * partir del bíceps flexionado (cm), la altura y el peso; el SEE publicado es
- * ≈3,8.
+ * ≈3,8 (la altura no entra en la fórmula).
  */
 function afuMen(m: BodyMeasures): number | null {
-  if (m.sex !== 'male' || !(m.arm > 0) || !(m.height > 0) || !(m.weight > 0)) return null;
+  if (m.sex !== 'male' || !(m.arm > 0) || !(m.weight > 0)) return null;
   const ffm = m.weight * 0.88 + 0.02 * m.arm - 0.55;
   return fatPercentFromLean(m, ffm);
 }
 
 /**
  * Fuerza Aérea de EE. UU. — mujeres (Brennen et al., 1979). Predice el FFM
- * a partir del antebrazo (cm), la altura y el peso; SEE ≈3,9.
+ * a partir del antebrazo (cm) y el peso (la altura no entra en la fórmula); SEE ≈3,9.
  */
 function afuWomen(m: BodyMeasures): number | null {
-  if (m.sex !== 'female' || !(m.forearm > 0) || !(m.height > 0) || !(m.weight > 0)) return null;
+  if (m.sex !== 'female' || !(m.forearm > 0) || !(m.weight > 0)) return null;
   const ffm = m.weight * 0.85 + 0.015 * m.forearm - 0.45;
   return fatPercentFromLean(m, ffm);
 }
@@ -1759,6 +1768,12 @@ interface FatCandidate {
 export function bodyComposition(m: BodyMeasures, lang: Lang = 'es'): BodyComposition {
   const candidates: FatCandidate[] = [];
   const missing = new Set<string>();
+
+  // Fuchs/Brennen/Boer predicen FFM en kg: su SEE publicado está en kg, no en
+  // puntos de % grasa. Sin convertirlo, esas ecuaciones reciben demasiado peso
+  // en el consenso. La conversión depende del peso de la persona.
+  const seePercentForLean = (seeKg: number, weight: number): number =>
+    weight > 0 ? (seeKg / weight) * 100 : seeKg;
 
   const add = (
     id: string,
@@ -1874,7 +1889,7 @@ export function bodyComposition(m: BodyMeasures, lang: Lang = 'es'): BodyComposi
     afuMen(m),
     tx(lang, 'Bíceps flexionado + altura', 'Flexed biceps + height'),
     'lean-mass',
-    3.8,
+    seePercentForLean(3.8, m.weight),
     3,
   );
   add(
@@ -1883,7 +1898,7 @@ export function bodyComposition(m: BodyMeasures, lang: Lang = 'es'): BodyComposi
     afuWomen(m),
     tx(lang, 'Antebrazo + altura', 'Forearm + height'),
     'lean-mass',
-    3.9,
+    seePercentForLean(3.9, m.weight),
     3,
   );
   add(
@@ -1892,7 +1907,7 @@ export function bodyComposition(m: BodyMeasures, lang: Lang = 'es'): BodyComposi
     boer(m),
     tx(lang, 'Peso + altura', 'Weight + height'),
     'lean-mass',
-    4.4,
+    seePercentForLean(4.4, m.weight),
     2,
   );
 
@@ -1912,9 +1927,19 @@ export function bodyComposition(m: BodyMeasures, lang: Lang = 'es'): BodyComposi
   // de tipo Huber h_i = min(1, 1,5σ/|v_i − mediana|) reduce automáticamente el
   // peso de ecuaciones atípicas (por ejemplo, una circunferencia mal medida)
   // sin eliminarlas del desglose.
+  // Las ecuaciones de IMC se derivaron en adultos y pierden precisión en
+  // adolescentes y mayores (sarcopenia: la masa magra baja y el IMC ya no
+  // refleja igual la grasa). Heurística documentada: se baja su peso en esas
+  // franjas y se favorecen las ecuaciones multi-sitio en ≥65 años.
+  const ageFamilyFactor = (c: FatCandidate): number => {
+    const age = m.age > 0 ? m.age : 30;
+    if (age < 18) return c.family === 'bmi' ? 0.6 : 1;
+    if (age >= 65) return c.family === 'bmi' ? 0.75 : c.family === 'multi-site' ? 1.15 : 1;
+    return 1;
+  };
   const precisionOf = (c: FatCandidate): number => {
     const see = Math.max(0.5, Math.min(10, c.see));
-    return (1 / (see ** 2)) * (1 + 0.05 * Math.max(0, c.inputs - 2));
+    return (1 / (see ** 2)) * (1 + 0.05 * Math.max(0, c.inputs - 2)) * ageFamilyFactor(c);
   };
   const medianOf = (values: number[]): number => {
     const sorted = [...values].sort((a, b) => a - b);

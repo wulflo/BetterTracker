@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { Exercise, PR, VaultEvent } from '../types';
 import { BODY_ZONES, ZONE_MAP, type ZoneId, zoneName, zoneMuscles } from '../zones';
 import { useLanguage, tx } from '../i18n';
@@ -274,13 +274,23 @@ export function BodyHeatmap({
               </button>
             ))}
           </div>
-          {active && (
-            <div className="heatmap-detail">
-              <strong>{zoneName(active, lang)}</strong>
-              <span>{tx(lang, `${Math.round(load[active]?.sets || 0)} series · ${Math.round(load[active]?.minutes || 0)} min esta semana`, `${Math.round(load[active]?.sets || 0)} sets · ${Math.round(load[active]?.minutes || 0)} min this week`)}</span>
-              <span className="muted">{zoneMuscles(ZONE_MAP[active], lang).join(' · ')}</span>
-            </div>
-          )}
+          {/* Siempre presente: si apareciera/desapareciera al pasar el cursor,
+              la rejilla y el resto de la tarjeta se desplazarían. */}
+          <div className="heatmap-detail">
+            {active ? (
+              <>
+                <strong>{zoneName(active, lang)}</strong>
+                <span>{tx(lang, `${Math.round(load[active]?.sets || 0)} series · ${Math.round(load[active]?.minutes || 0)} min esta semana`, `${Math.round(load[active]?.sets || 0)} sets · ${Math.round(load[active]?.minutes || 0)} min this week`)}</span>
+                <span className="muted">{zoneMuscles(ZONE_MAP[active], lang).join(' · ')}</span>
+              </>
+            ) : (
+              <>
+                <strong>{tx(lang, 'Zona muscular', 'Muscle zone')}</strong>
+                <span>{tx(lang, 'Pasa el cursor por una zona o una etiqueta.', 'Hover a zone or a label.')}</span>
+                <span className="muted">—</span>
+              </>
+            )}
+          </div>
           <div className="heatmap-scale">
             <span>{tx(lang, 'Menos', 'Less')}</span>
             <div className="heatmap-gradient" />

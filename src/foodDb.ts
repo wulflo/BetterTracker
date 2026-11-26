@@ -1,3 +1,4 @@
+import { DISH_ROWS } from './data/dishes';
 import type { Lang } from './i18n';
 import type { Food, FoodCategory, FoodLogItem, MealSlot, VaultEvent } from './types';
 import { foodName } from './data/foodNames.en';
@@ -9,7 +10,7 @@ import { foodName } from './data/foodNames.en';
  * una tabla de composición oficial ni el consejo de un profesional. El usuario
  * puede añadir sus propios alimentos; esos se guardan como eventos de la bóveda.
  */
-type FoodRow = [
+export type FoodRow = [
   id: string,
   name: string,
   category: FoodCategory,
@@ -19,6 +20,8 @@ type FoodRow = [
   fat: number,
   fiber: number,
   units?: Record<string, number>,
+  source?: string,
+  confidence?: number,
 ];
 
 export const FOOD_CATEGORIES: Array<{ id: FoodCategory; label: string; labelEn: string }> = [
@@ -141,7 +144,7 @@ const DEFAULT_UNITS: Record<FoodCategory, Record<string, number>> = {
   otro: { porcion: 100 },
 };
 
-const ROWS: FoodRow[] = [
+const BASE_ROWS: FoodRow[] = [
   // Frutas
   ['manzana', 'Manzana', 'fruta', 52, 0.3, 13.8, 0.2, 2.4, { unidad: 180 }],
   ['platano', 'Plátano', 'fruta', 89, 1.1, 22.8, 0.3, 2.6, { unidad: 120 }],
@@ -697,12 +700,16 @@ const ROWS: FoodRow[] = [
   ['creatina_monohidratada', 'Creatina monohidratada', 'suplemento', 0.0, 0.0, 0.0, 0.0, 0.0, { unidad: 5 }],
 ];
 
-export const FOODS: Food[] = ROWS.map(([id, name, category, kcal, protein, carbs, fat, fiber, units]) => ({
+const ROWS: FoodRow[] = [...BASE_ROWS, ...DISH_ROWS];
+
+export const FOODS: Food[] = ROWS.map(([id, name, category, kcal, protein, carbs, fat, fiber, units, source, confidence]) => ({
   id,
   name,
   category,
   per100: { kcal, protein, carbs, fat, fiber },
   units: { ...DEFAULT_UNITS[category], ...(units ?? {}) },
+  source,
+  confidence,
 }));
 
 export function foodUnits(food: Food): string[] {
@@ -783,6 +790,14 @@ export function resizeFoodLogItem(
     fat: scale(item.fat),
     fiber: scale(item.fiber),
   };
+}
+
+/** Detecta un código escrito con espacios o guiones sin confundir texto con dígitos. */
+export function looksLikeBarcodeInput(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed || !/^[\d\s-]+$/.test(trimmed)) return false;
+  const digits = normalizeBarcode(trimmed);
+  return digits.length >= 6 && digits.length <= 14;
 }
 
 export function normalizeBarcode(code: string): string {

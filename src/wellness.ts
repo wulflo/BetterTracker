@@ -10,7 +10,7 @@
  */
 import type { Lang } from './i18n';
 import { tx } from './i18n';
-import type { Habit, HabitFrequency, HabitLog, MoodEntry, MoodScore, VaultEvent } from './types';
+import type { Habit, HabitFrequency, HabitKind, HabitLog, MoodEntry, MoodScore, VaultEvent } from './types';
 import { addDays, parseISO, startOfWeek, todayISO } from './metrics';
 
 export interface HabitToday {
@@ -35,6 +35,9 @@ export interface WellnessDigest {
   pointsToday: number;
   pointsWeek: number;
   pointsMonth: number;
+  pointsPositive: number;
+  pointsNegative: number;
+  counts: Record<HabitKind, number>;
   streak: number;
   bestStreak: number;
   moodToday: MoodEntry | null;
@@ -66,6 +69,7 @@ export function reduceHabits(events: VaultEvent[]): Habit[] {
         timesPerWeek: clampInt(raw.timesPerWeek, 1, 7, 1),
         dayOfMonth: clampInt(raw.dayOfMonth, 1, 31, 1),
         points: clampInt(raw.points, 1, 100, 10),
+        kind: normalizeKind(raw.kind),
         enabled: raw.enabled !== false,
         createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : event.timestamp,
       });
@@ -85,6 +89,10 @@ function clampInt(value: unknown, min: number, max: number, fallback: number): n
 
 function normalizeFrequency(value: unknown): HabitFrequency {
   return value === 'weekly' || value === 'monthly' ? value : 'daily';
+}
+
+function normalizeKind(value: unknown): HabitKind {
+  return value === 'strong' || value === 'addictive' || value === 'bad' ? value : 'good';
 }
 
 export function reduceHabitLogs(events: VaultEvent[]): Map<string, HabitLog> {
@@ -179,6 +187,21 @@ export function habitDone(habit: Habit, logs: Map<string, HabitLog>, date = toda
   return Boolean(log?.completed);
 }
 
+/** En hábitos malos o adictivos, «no hacerlo» cuenta como cumplimiento. */
+export function habitSucceeded(habit: Habit, logs: Map<string, HabitLog>, date = todayISO()): boolean {
+  const done = habitDone(habit, logs, date);
+  return isNegativeKind(habit.kind) ? !done : done;
+}
+
+function isNegativeKind(kind?: HabitKind): boolean {
+  return kind === 'bad' || kind === 'addictive';
+}
+
+/** Puntos con signo: los hábitos malos restan cuando se registran como hechos. */
+export function habitSignedPoints(habit: Habit, points: number): number {
+  return isNegativeKind(habit.kind) ? -Math.abs(points) : Math.abs(points);
+}
+
 export function wellnessDigest(events: VaultEvent[], now = new Date(), lang: Lang = 'es'): WellnessDigest {
   const habits = reduceHabits(events);
   const logs = reduceHabitLogs(events);
@@ -189,18 +212,26 @@ export function wellnessDigest(events: VaultEvent[], now = new Date(), lang: Lan
 
   const todayList = habits.map((habit) => {
     const due = isHabitDue(habit, today);
-    const done = habitDone(habit, logs, today);
-    return { habit, due, done, points: done ? logs.get(`${habit.id}:${today}`)?.points ?? habit.points : 0 };
+    const done = habitSucceeded(habit, logs, today);
+    const raw = logs.get(`${habit.id}:${today}`)?.points ?? habit.points;
+    return { habit, due, done, points: done ? habitSignedPoints(habit, raw) : 0 };
   });
   const dueToday = todayList.filter((item) => item.due).length;
   const doneToday = todayList.filter((item) => item.due && item.done).length;
   const pointsToday = todayList.reduce((sum, item) => sum + item.points, 0);
-
+  const pointsPositive = todayList.filter((item) => item.points > 0).reduce((sum, item) => sum + item.points, 0);
+  const pointsNegative = todayList.filter((item) => item.points < 0).reduce((sum, item) => sum + item.points, 0);
+  const signedLogPoints = (log: HabitLog) => {
+    const habit = habits.find((h) => h.id === log.habitId);
+    return habit ? habitSignedPoints(habit, log.points) : log.points;
+  };
   const pointsIn = (predicate: (log: HabitLog) => boolean) =>
-    [...logs.values()].filter((log) => log.completed && predicate(log)).reduce((sum, log) => sum + log.points, 0);
+    [...logs.values()].filter((log) => log.completed && predicate(log)).reduce((sum, log) => sum + signedLogPoints(log), 0);
 
   const pointsWeek = pointsIn((log) => log.date >= weekStart && log.date <= today);
   const pointsMonth = pointsIn((log) => log.date.startsWith(monthPrefix));
+  const counts: Record<HabitKind, number> = { good: 0, strong: 0, addictive: 0, bad: 0 };
+  for (const habit of habits) counts[habit.kind ?? 'good'] += 1;
 
   const { streak, bestStreak } = habitStreaks(habits, logs, now);
 
@@ -220,13 +251,13 @@ export function wellnessDigest(events: VaultEvent[], now = new Date(), lang: Lan
   const week = Array.from({ length: 7 }, (_, index) => {
     const date = todayISO(addDays(parseISO(weekStart), index));
     const due = habits.filter((habit) => isHabitDue(habit, date)).length;
-    const done = habits.filter((habit) => habitDone(habit, logs, date)).length;
+    const done = habits.filter((habit) => habitSucceeded(habit, logs, date)).length;
     return {
       date,
       label: dayLabels(lang)[parseISO(date).getDay()],
       points: [...logs.values()]
         .filter((log) => log.date === date && log.completed)
-        .reduce((sum, log) => sum + log.points, 0),
+        .reduce((sum, log) => sum + signedLogPoints(log), 0),
       due,
       done,
       mood: moodByDate.get(date)?.mood ?? null,
@@ -241,6 +272,9 @@ export function wellnessDigest(events: VaultEvent[], now = new Date(), lang: Lan
     pointsToday,
     pointsWeek,
     pointsMonth,
+    pointsPositive,
+    pointsNegative,
+    counts,
     streak,
     bestStreak,
     moodToday: moodByDate.get(today) ?? null,
@@ -271,7 +305,7 @@ export function habitStreaks(
   for (let index = 0; index <= 366; index += 1) {
     const date = todayISO(addDays(start, index));
     const scheduled = habits.filter((habit) => isHabitDue(habit, date));
-    const complete = scheduled.length > 0 && scheduled.every((habit) => habitDone(habit, logs, date));
+    const complete = scheduled.length > 0 && scheduled.every((habit) => habitSucceeded(habit, logs, date));
     days.push({ date, complete, scheduled: scheduled.length > 0 });
   }
 

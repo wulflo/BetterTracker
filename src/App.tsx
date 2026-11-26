@@ -34,13 +34,23 @@ import { openPrivacyPolicy, openRepository, REPOSITORY_URL } from './links';
 
 type View = 'panel' | 'training' | 'history' | 'body' | 'wellness';
 type ToastTone = 'success' | 'error' | 'info';
+type SettingsTab = 'appearance' | 'vault' | 'backups' | 'updates' | 'about';
+
+/** Pestañas horizontales de Ajustes, en el mismo estilo que SinNotas. */
+const SETTINGS_TABS: Array<[SettingsTab, string, string]> = [
+  ['appearance', 'Apariencia', 'Appearance'],
+  ['vault', 'Bóveda', 'Vault'],
+  ['backups', 'Copias', 'Backups'],
+  ['updates', 'Actualizaciones', 'Updates'],
+  ['about', 'Acerca de', 'About'],
+];
 
 const NAV: Array<{ id: View; icon: string }> = [
   { id: 'panel', icon: 'dashboard' },
   { id: 'training', icon: 'dumbbell' },
-  { id: 'history', icon: 'history' },
   { id: 'body', icon: 'body' },
   { id: 'wellness', icon: 'check' },
+  { id: 'history', icon: 'history' },
 ];
 
 /** Fecha local en el mismo formato que usa Rust para `longlife`. */
@@ -68,6 +78,10 @@ export default function App() {
   const [events, setEvents] = useState<VaultEvent[]>([]);
   const [view, setView] = useState<View>('panel');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>(() => {
+    const saved = localStorage.getItem('bt.settings.tab');
+    return SETTINGS_TABS.some(([id]) => id === saved) ? (saved as SettingsTab) : 'appearance';
+  });
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null);
   const toastTimer = useRef<number | null>(null);
   const dropWarnedRef = useRef('');
@@ -83,6 +97,24 @@ export default function App() {
     if (toastTimer.current) window.clearTimeout(toastTimer.current);
     toastTimer.current = window.setTimeout(() => setToast(null), 3800);
   }, []);
+
+  /** Navegación con teclado entre pestañas de Ajustes (patrón ARIA tablist). */
+  const onSettingsTabKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLButtonElement>) => {
+      const index = SETTINGS_TABS.findIndex(([id]) => id === settingsTab);
+      let next = index;
+      if (event.key === 'ArrowRight') next = (index + 1) % SETTINGS_TABS.length;
+      else if (event.key === 'ArrowLeft') next = (index - 1 + SETTINGS_TABS.length) % SETTINGS_TABS.length;
+      else if (event.key === 'Home') next = 0;
+      else if (event.key === 'End') next = SETTINGS_TABS.length - 1;
+      else return;
+      event.preventDefault();
+      const id = SETTINGS_TABS[next][0];
+      setSettingsTab(id);
+      localStorage.setItem('bt.settings.tab', id);
+    },
+    [settingsTab],
+  );
 
   const refresh = useCallback(async (force = false) => {
     if (!force && Date.now() - lastLocalAppendRef.current < 1200) return;
@@ -547,7 +579,6 @@ export default function App() {
               exercises={exercises}
               onRefresh={onRefresh}
               notify={notify}
-              onNavigate={(next) => setView(next)}
             />
           )}
           {view === 'training' && (
@@ -616,7 +647,7 @@ export default function App() {
 
       {settingsOpen && (
         <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-          <div className="modal" style={{ width: 'min(620px, 100%)' }}>
+          <div className="modal settings-modal">
             <div className="modal-header">
               <div>
                 <div className="modal-title" id="settings-title">{t('settings', lang)}</div>
@@ -632,336 +663,385 @@ export default function App() {
                 <Icon name="close" size={16} />
               </button>
             </div>
-            <div className="modal-body">
-              <div className="settings-row">
-                <span className="muted">{tx(lang, 'Bóveda', 'Vault')}</span>
-                <span className="value" title={vault ?? undefined}>{vaultName}</span>
+            <div className="modal-body settings-body">
+              <div className="settings-tabs" role="tablist" aria-label={tx(lang, 'Secciones de ajustes', 'Settings sections')}>
+                <button type="button" role="tab" aria-selected={settingsTab === 'appearance'}
+                  id={"settings-tab-appearance"} aria-controls={"settings-panel-appearance"}
+                  tabIndex={settingsTab === 'appearance' ? 0 : -1} onKeyDown={onSettingsTabKeyDown}
+                  className={`settings-tab ${settingsTab === 'appearance' ? 'active' : ''}`}
+                  onClick={() => { setSettingsTab('appearance'); localStorage.setItem('bt.settings.tab', 'appearance'); }}>
+                  {tx(lang, 'Apariencia', 'Appearance')}
+                </button>
+                <button type="button" role="tab" aria-selected={settingsTab === 'vault'}
+                  id={"settings-tab-vault"} aria-controls={"settings-panel-vault"}
+                  tabIndex={settingsTab === 'vault' ? 0 : -1} onKeyDown={onSettingsTabKeyDown}
+                  className={`settings-tab ${settingsTab === 'vault' ? 'active' : ''}`}
+                  onClick={() => { setSettingsTab('vault'); localStorage.setItem('bt.settings.tab', 'vault'); }}>
+                  {tx(lang, 'Bóveda', 'Vault')}
+                </button>
+                <button type="button" role="tab" aria-selected={settingsTab === 'backups'}
+                  id={"settings-tab-backups"} aria-controls={"settings-panel-backups"}
+                  tabIndex={settingsTab === 'backups' ? 0 : -1} onKeyDown={onSettingsTabKeyDown}
+                  className={`settings-tab ${settingsTab === 'backups' ? 'active' : ''}`}
+                  onClick={() => { setSettingsTab('backups'); localStorage.setItem('bt.settings.tab', 'backups'); }}>
+                  {tx(lang, 'Copias', 'Backups')}
+                </button>
+                <button type="button" role="tab" aria-selected={settingsTab === 'updates'}
+                  id={"settings-tab-updates"} aria-controls={"settings-panel-updates"}
+                  tabIndex={settingsTab === 'updates' ? 0 : -1} onKeyDown={onSettingsTabKeyDown}
+                  className={`settings-tab ${settingsTab === 'updates' ? 'active' : ''}`}
+                  onClick={() => { setSettingsTab('updates'); localStorage.setItem('bt.settings.tab', 'updates'); }}>
+                  {tx(lang, 'Actualizaciones', 'Updates')}
+                </button>
+                <button type="button" role="tab" aria-selected={settingsTab === 'about'}
+                  id={"settings-tab-about"} aria-controls={"settings-panel-about"}
+                  tabIndex={settingsTab === 'about' ? 0 : -1} onKeyDown={onSettingsTabKeyDown}
+                  className={`settings-tab ${settingsTab === 'about' ? 'active' : ''}`}
+                  onClick={() => { setSettingsTab('about'); localStorage.setItem('bt.settings.tab', 'about'); }}>
+                  {tx(lang, 'Acerca de', 'About')}
+                </button>
               </div>
-              {vaultDataDir && (
+              <div className="settings-panels">
+              <section className="settings-tab-panel" role="tabpanel" hidden={settingsTab !== 'appearance'} id={"settings-panel-appearance"} aria-labelledby={"settings-tab-appearance"}>
                 <div className="settings-row">
-                  <span className="muted">{tx(lang, 'Datos de la app', 'App data')}</span>
-                  <span className="value mono small">{vaultDataDir}</span>
-                </div>
-              )}
-              <div className="settings-row">
-                <span className="muted">{tx(lang, 'Dispositivo', 'Device')}</span>
-                <span className="value mono">{deviceId}</span>
-              </div>
-              <div className="settings-row">
-                <span className="muted">{tx(lang, 'Versión', 'Version')}</span>
-                <span className="value">{info?.version ?? '—'}</span>
-              </div>
-              <div className="settings-row">
-                <span className="muted">Commit</span>
-                <span className="value mono">{info?.commit ?? '—'}</span>
-              </div>
-              <div className="settings-row">
-                <span className="muted">Build</span>
-                <span className="value">{info?.build_date ?? '—'}</span>
-              </div>
-              <div className="settings-row">
-                <span className="muted">{tx(lang, 'Esquema de bóveda', 'Vault schema')}</span>
-                <span className="value">v{info?.vault_schema_version ?? '—'}</span>
-              </div>
-              <div className="settings-row">
-                <span className="muted">{tx(lang, 'Eventos', 'Events')}</span>
-                <span className="value">{events.length}</span>
-              </div>
-              <div className="settings-row">
-                <span className="muted">{tx(lang, 'Tema', 'Theme')}</span>
-                <div
-                  className="segmented theme-switch"
-                  role="group"
-                  aria-label={tx(lang, 'Tema', 'Theme')}
-                >
-                  <button
-                    type="button"
-                    className={`segment ${mode === 'dark' ? 'active' : ''}`}
-                    aria-pressed={mode === 'dark'}
-                    onClick={() => setMode('dark')}
+                  <span className="muted">{tx(lang, 'Tema', 'Theme')}</span>
+                  <div
+                    className="segmented theme-switch"
+                    role="group"
+                    aria-label={tx(lang, 'Tema', 'Theme')}
                   >
-                    <Icon name="moon" size={14} /> {tx(lang, 'Oscuro', 'Dark')}
-                  </button>
-                  <button
-                    type="button"
-                    className={`segment ${mode === 'light' ? 'active' : ''}`}
-                    aria-pressed={mode === 'light'}
-                    onClick={() => setMode('light')}
-                  >
-                    <Icon name="sun" size={14} /> {tx(lang, 'Claro', 'Light')}
-                  </button>
-                </div>
-              </div>
-              <div className="settings-row">
-                <span className="muted">{tx(lang, 'Color de acento', 'Accent color')}</span>
-                <div
-                  className="accent-picker"
-                  role="radiogroup"
-                  aria-label={tx(lang, 'Color de acento', 'Accent color')}
-                >
-                  {ACCENTS.map((option) => (
                     <button
-                      key={option.id}
                       type="button"
-                      role="radio"
-                      aria-checked={accent === option.id}
-                      aria-label={tx(lang, option.labelEs, option.labelEn)}
-                      title={tx(lang, option.labelEs, option.labelEn)}
-                      className={`accent-swatch ${accent === option.id ? 'active' : ''}`}
-                      style={{ '--swatch': option.color } as React.CSSProperties}
-                      onClick={() => setAccent(option.id)}
+                      className={`segment ${mode === 'dark' ? 'active' : ''}`}
+                      aria-pressed={mode === 'dark'}
+                      onClick={() => setMode('dark')}
                     >
-                      <Icon name="check" size={12} />
+                      <Icon name="moon" size={14} /> {tx(lang, 'Oscuro', 'Dark')}
                     </button>
-                  ))}
-                </div>
-              </div>
-              <div className="settings-row">
-                <span className="muted">{t('language', lang)}</span>
-                <Select
-                  className="settings-select"
-                  value={lang}
-                  onChange={(value) => setLang(value as any)}
-                  options={[
-                    { value: 'es', label: 'Español' },
-                    { value: 'en', label: 'English' },
-                  ]}
-                />
-              </div>
-              <div className="settings-row">
-                <span className="muted">{tx(lang, 'Formato instalado', 'Installed format')}</span>
-                <span className="value mono">{info?.install_format ?? '—'}</span>
-              </div>
-              <div className="settings-row">
-                <span className="muted">{tx(lang, 'Código de barras', 'Barcode')}</span>
-                <span className="value small">
-                  {tx(
-                    lang,
-                    'Se escribe o pega en Panel → Ingesta',
-                    'Type or paste it in Dashboard → Intake',
-                  )}
-                </span>
-              </div>
-              <div className="settings-row">
-                <span className="muted">{tx(lang, 'Repositorio', 'Repository')}</span>
-                <button
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => void openRepository().catch((e) => notify(errorText(e), 'error'))}
-                >
-                  <Icon name="repo" size={14} /> {tx(lang, 'Abrir GitHub', 'Open GitHub')}
-                </button>
-              </div>
-              <div className="settings-row">
-                <span className="muted">{tx(lang, 'Privacidad', 'Privacy')}</span>
-                <button
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => void openPrivacyPolicy().catch((e) => notify(errorText(e), 'error'))}
-                >
-                  <Icon name="info" size={14} /> {tx(lang, 'Ver política de privacidad', 'View privacy policy')}
-                </button>
-              </div>
-              <UpdatePanel installFormat={info?.install_format} notify={notify} />
-              <div style={{ marginTop: 14 }}>
-                <div className="modal-title" style={{ fontSize: 14, marginBottom: 4 }}>
-                  {tx(lang, 'Copias de seguridad (longlife)', 'Backups (longlife)')}
-                </div>
-                <div className="card-sub" style={{ marginBottom: 8 }}>
-                  {tx(lang, 'Una copia de ', 'One copy of ')}
-                  <span className="mono">omega</span>
-                  {tx(lang, ' por día y dispositivo en ', ' per day and device in ')}
-                  <span className="mono">longlife/&lt;dispositivo&gt;/&lt;fecha&gt;</span>
-                  {tx(
-                    lang,
-                    `. Se conservan las ${backupStatus?.retention_days ?? 7} más recientes de cada dispositivo.`,
-                    `. The ${backupStatus?.retention_days ?? 7} most recent per device are kept.`,
-                  )}
+                    <button
+                      type="button"
+                      className={`segment ${mode === 'light' ? 'active' : ''}`}
+                      aria-pressed={mode === 'light'}
+                      onClick={() => setMode('light')}
+                    >
+                      <Icon name="sun" size={14} /> {tx(lang, 'Claro', 'Light')}
+                    </button>
+                  </div>
                 </div>
                 <div className="settings-row">
-                  <span className="muted">{tx(lang, 'Estado', 'Status')}</span>
-                  <span className="value small">{backupSummary}</span>
+                  <span className="muted">{tx(lang, 'Color de acento', 'Accent color')}</span>
+                  <div
+                    className="accent-picker"
+                    role="radiogroup"
+                    aria-label={tx(lang, 'Color de acento', 'Accent color')}
+                  >
+                    {ACCENTS.map((option) => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={accent === option.id}
+                        aria-label={tx(lang, option.labelEs, option.labelEn)}
+                        title={tx(lang, option.labelEs, option.labelEn)}
+                        className={`accent-swatch ${accent === option.id ? 'active' : ''}`}
+                        style={{ '--swatch': option.color } as React.CSSProperties}
+                        onClick={() => setAccent(option.id)}
+                      >
+                        <Icon name="check" size={12} />
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                {backupStatus && backupStatus.copies.length > 0 && (
+                <div className="settings-row">
+                  <span className="muted">{t('language', lang)}</span>
+                  <Select
+                    className="settings-select"
+                    value={lang}
+                    onChange={(value) => setLang(value as any)}
+                    options={[
+                      { value: 'es', label: 'Español' },
+                      { value: 'en', label: 'English' },
+                    ]}
+                  />
+                </div>
+                <div className="settings-row">
+                  <span className="muted">{tx(lang, 'Formato instalado', 'Installed format')}</span>
+                  <span className="value mono">{info?.install_format ?? '—'}</span>
+                </div>
+                <div className="settings-row">
+                  <span className="muted">{tx(lang, 'Código de barras', 'Barcode')}</span>
+                  <span className="value small">
+                    {tx(
+                      lang,
+                      'Se escribe o pega en Panel → Ingesta',
+                      'Type or paste it in Dashboard → Intake',
+                    )}
+                  </span>
+                </div>
+              </section>
+              <section className="settings-tab-panel" role="tabpanel" hidden={settingsTab !== 'vault'} id={"settings-panel-vault"} aria-labelledby={"settings-tab-vault"}>
+                <div className="settings-row">
+                  <span className="muted">{tx(lang, 'Bóveda', 'Vault')}</span>
+                  <span className="value" title={vault ?? undefined}>{vaultName}</span>
+                </div>
+                {vaultDataDir && (
                   <div className="settings-row">
-                    <span className="muted">{tx(lang, 'Tamaño total', 'Total size')}</span>
-                    <span className="value">{formatBytes(backupStatus.total_bytes)}</span>
+                    <span className="muted">{tx(lang, 'Datos de la app', 'App data')}</span>
+                    <span className="value mono small">{vaultDataDir}</span>
                   </div>
                 )}
-                {eventDrop && (
-                  <div className="notice notice-error" style={{ marginTop: 10 }}>
+                <div className="settings-row">
+                  <span className="muted">{tx(lang, 'Dispositivo', 'Device')}</span>
+                  <span className="value mono">{deviceId}</span>
+                </div>
+                <div className="notice notice-info">
+                  <Icon name="info" size={16} />
+                  <span>
+                    {tx(lang, 'La app solo lee y escribe datos en ', 'The app only reads and writes data in ')}
+                    <span className="mono">omega</span>
+                    {tx(
+                      lang,
+                      '. Las copias longlife son una red de seguridad local; no se exportan ni se envían a ningún servidor. Las únicas conexiones de red son la comprobación manual de actualizaciones y la consulta opcional a Open Food Facts al buscar un código de barras.',
+                      '. Longlife backups are a local safety net; they are not exported or sent to any server. The only network connections are the manual update check and the optional Open Food Facts lookup when looking up a barcode.',
+                    )}
+                  </span>
+                </div>
+                {!isTauri() && (
+                  <div className="notice notice-warn">
                     <Icon name="info" size={16} />
                     <span>
                       {tx(
                         lang,
-                        `La bóveda pasó de ${eventDrop.previous} a ${eventDrop.current} eventos. Una sincronización o una copia antigua pudo sobrescribir archivos. Elige una copia de longlife y pulsa «Restaurar» para recuperar solo los eventos que faltan.`,
-                        `The vault went from ${eventDrop.previous} to ${eventDrop.current} events. A sync or an old backup may have overwritten files. Choose a longlife backup and press "Restore" to recover only the missing events.`,
+                        'Estás en modo navegador: los eventos se guardan en localStorage. En la app de escritorio se usa la bóveda real y los diálogos nativos.',
+                        'You are in browser mode: events are stored in localStorage. The desktop app uses the real vault and native dialogs.',
                       )}
                     </span>
                   </div>
                 )}
-                <div className="row wrap" style={{ marginTop: 8 }}>
-                  <button className="btn btn-ghost btn-sm" onClick={createBackup} disabled={backupBusy}>
-                    <Icon name="history" size={14} />{' '}
-                    {backupBusy
-                      ? tx(lang, 'Trabajando…', 'Working…')
-                      : tx(lang, 'Crear copia de hoy', "Create today's backup")}
-                  </button>
-                </div>
-                {backupStatus && backupStatus.copies.length > 0 && (
-                  <>
-                    <div className="card-sub" style={{ marginTop: 12, marginBottom: 4 }}>
-                      {tx(lang, 'Copias disponibles ', 'Available backups ')}
-                      ({backupStatus.copies.length}).
-                      {tx(
-                        lang,
-                        ' Restaurar nunca borra ni sobrescribe datos: importa a ',
-                        ' Restoring never deletes or overwrites data: it imports into ',
-                      )}
-                      <span className="mono">omega/devices/restored-…</span>
-                      {tx(lang, ' solo los eventos que falten.', ' only the missing events.')}
+                {!isTauri() && (
+                  <div className="row between wrap">
+                    <button className="btn btn-ghost btn-sm" onClick={seedSample}>
+                      <Icon name="plus" size={14} /> {tx(lang, 'Cargar datos de ejemplo', 'Load sample data')}
+                    </button>
+                    <span className="hint">{tx(lang, 'Solo para probar la interfaz.', 'Only for testing the interface.')}</span>
+                  </div>
+                )}
+              </section>
+              <section className="settings-tab-panel" role="tabpanel" hidden={settingsTab !== 'backups'} id={"settings-panel-backups"} aria-labelledby={"settings-tab-backups"}>
+                <div className="settings-section">
+                  <div className="settings-section-title">
+                    {tx(lang, 'Copias de seguridad (longlife)', 'Backups (longlife)')}
+                  </div>
+                  <div className="settings-section-sub card-sub">
+                    {tx(lang, 'Una copia de ', 'One copy of ')}
+                    <span className="mono">omega</span>
+                    {tx(lang, ' por día y dispositivo en ', ' per day and device in ')}
+                    <span className="mono">longlife/&lt;dispositivo&gt;/&lt;fecha&gt;</span>
+                    {tx(
+                      lang,
+                      `. Se conservan las ${backupStatus?.retention_days ?? 7} más recientes de cada dispositivo.`,
+                      `. The ${backupStatus?.retention_days ?? 7} most recent per device are kept.`,
+                    )}
+                  </div>
+                  <div className="settings-row">
+                    <span className="muted">{tx(lang, 'Estado', 'Status')}</span>
+                    <span className="value small">{backupSummary}</span>
+                  </div>
+                  {backupStatus && backupStatus.copies.length > 0 && (
+                    <div className="settings-row">
+                      <span className="muted">{tx(lang, 'Tamaño total', 'Total size')}</span>
+                      <span className="value">{formatBytes(backupStatus.total_bytes)}</span>
                     </div>
-                    <ul className="snapshot-list">
-                      {[...backupStatus.copies].reverse().map((copy) => (
-                        <li key={copy.id} className="snapshot-item">
-                          <div className="snapshot-main">
-                            <div className="snapshot-title">
-                              <strong>{copy.date}</strong>
-                              <span className="hint">{copy.device_label}</span>
-                              {copy.current_device && (
-                                <span className="badge badge-success">{tx(lang, 'Este dispositivo', 'This device')}</span>
-                              )}
-                              {copy.legacy && (
-                                <span className="badge badge-muted">{tx(lang, 'Formato antiguo', 'Old format')}</span>
-                              )}
-                              {copy.damaged && <span className="badge badge-warning">{tx(lang, 'Dañada', 'Damaged')}</span>}
-                              {!copy.complete && !copy.damaged && (
-                                <span className="badge badge-warning">{tx(lang, 'Incompleta', 'Incomplete')}</span>
-                              )}
-                            </div>
-                            <div className="hint small">
-                              {copy.files} {tx(lang, 'archivos', 'files')} · {formatBytes(copy.bytes)} ·{' '}
-                              <span className="mono">{copy.id}</span>
-                            </div>
-                            {copy.damaged && (
-                              <div className="hint small">
-                                {tx(
-                                  lang,
-                                  `Contiene ${copy.files}${copy.expected_files !== null ? ` de ${copy.expected_files}` : ''} archivos según su manifiesto. Restaurar usará solo lo que haya`,
-                                  `Contains ${copy.files}${copy.expected_files !== null ? ` of ${copy.expected_files}` : ''} files according to its manifest. Restoring will use only what is available`,
+                  )}
+                  {eventDrop && (
+                    <div className="notice notice-error" style={{ marginTop: 10 }}>
+                      <Icon name="info" size={16} />
+                      <span>
+                        {tx(
+                          lang,
+                          `La bóveda pasó de ${eventDrop.previous} a ${eventDrop.current} eventos. Una sincronización o una copia antigua pudo sobrescribir archivos. Elige una copia de longlife y pulsa «Restaurar» para recuperar solo los eventos que faltan.`,
+                          `The vault went from ${eventDrop.previous} to ${eventDrop.current} events. A sync or an old backup may have overwritten files. Choose a longlife backup and press "Restore" to recover only the missing events.`,
+                        )}
+                      </span>
+                    </div>
+                  )}
+                  <div className="row wrap" style={{ marginTop: 8 }}>
+                    <button className="btn btn-ghost btn-sm" onClick={createBackup} disabled={backupBusy}>
+                      <Icon name="history" size={14} />{' '}
+                      {backupBusy
+                        ? tx(lang, 'Trabajando…', 'Working…')
+                        : tx(lang, 'Crear copia de hoy', "Create today's backup")}
+                    </button>
+                  </div>
+                  {backupStatus && backupStatus.copies.length > 0 && (
+                    <>
+                      <div className="card-sub" style={{ marginTop: 12, marginBottom: 4 }}>
+                        {tx(lang, 'Copias disponibles ', 'Available backups ')}
+                        ({backupStatus.copies.length}).
+                        {tx(
+                          lang,
+                          ' Restaurar nunca borra ni sobrescribe datos: importa a ',
+                          ' Restoring never deletes or overwrites data: it imports into ',
+                        )}
+                        <span className="mono">omega/devices/restored-…</span>
+                        {tx(lang, ' solo los eventos que falten.', ' only the missing events.')}
+                      </div>
+                      <ul className="snapshot-list">
+                        {[...backupStatus.copies].reverse().map((copy) => (
+                          <li key={copy.id} className="snapshot-item">
+                            <div className="snapshot-main">
+                              <div className="snapshot-title">
+                                <strong>{copy.date}</strong>
+                                <span className="hint">{copy.device_label}</span>
+                                {copy.current_device && (
+                                  <span className="badge badge-success">{tx(lang, 'Este dispositivo', 'This device')}</span>
                                 )}
-                                {copy.current_device && copy.date === localDateKey()
-                                  ? tx(lang, '; «Crear copia de hoy» la rehace completa.', '; "Create today\'s backup" rebuilds it completely.')
-                                  : tx(lang, '; si necesitas el resto, usa otra copia.', '; if you need the rest, use another backup.')}
+                                {copy.legacy && (
+                                  <span className="badge badge-muted">{tx(lang, 'Formato antiguo', 'Old format')}</span>
+                                )}
+                                {copy.damaged && <span className="badge badge-warning">{tx(lang, 'Dañada', 'Damaged')}</span>}
+                                {!copy.complete && !copy.damaged && (
+                                  <span className="badge badge-warning">{tx(lang, 'Incompleta', 'Incomplete')}</span>
+                                )}
                               </div>
-                            )}
-                          </div>
-                          {confirmRestore === copy.id ? (
-                            <div className="snapshot-actions">
-                              <button
-                                className="btn btn-primary btn-sm"
-                                onClick={() => void restoreCopy(copy)}
-                                disabled={restoreBusy !== null}
-                              >
-                                {restoreBusy === copy.id
-                                  ? tx(lang, 'Restaurando…', 'Restoring…')
-                                  : tx(lang, 'Restaurar lo que falta', 'Restore missing')}
-                              </button>
+                              <div className="hint small">
+                                {copy.files} {tx(lang, 'archivos', 'files')} · {formatBytes(copy.bytes)} ·{' '}
+                                <span className="mono">{copy.id}</span>
+                              </div>
+                              {copy.damaged && (
+                                <div className="hint small">
+                                  {tx(
+                                    lang,
+                                    `Contiene ${copy.files}${copy.expected_files !== null ? ` de ${copy.expected_files}` : ''} archivos según su manifiesto. Restaurar usará solo lo que haya`,
+                                    `Contains ${copy.files}${copy.expected_files !== null ? ` of ${copy.expected_files}` : ''} files according to its manifest. Restoring will use only what is available`,
+                                  )}
+                                  {copy.current_device && copy.date === localDateKey()
+                                    ? tx(lang, '; «Crear copia de hoy» la rehace completa.', '; "Create today\'s backup" rebuilds it completely.')
+                                    : tx(lang, '; si necesitas el resto, usa otra copia.', '; if you need the rest, use another backup.')}
+                                </div>
+                              )}
+                            </div>
+                            {confirmRestore === copy.id ? (
+                              <div className="snapshot-actions">
+                                <button
+                                  className="btn btn-primary btn-sm"
+                                  onClick={() => void restoreCopy(copy)}
+                                  disabled={restoreBusy !== null}
+                                >
+                                  {restoreBusy === copy.id
+                                    ? tx(lang, 'Restaurando…', 'Restoring…')
+                                    : tx(lang, 'Restaurar lo que falta', 'Restore missing')}
+                                </button>
+                                <button
+                                  className="btn btn-ghost btn-sm"
+                                  onClick={() => setConfirmRestore(null)}
+                                  disabled={restoreBusy !== null}
+                                >
+                                  {tx(lang, 'Cancelar', 'Cancel')}
+                                </button>
+                              </div>
+                            ) : (
                               <button
                                 className="btn btn-ghost btn-sm"
-                                onClick={() => setConfirmRestore(null)}
+                                onClick={() => setConfirmRestore(copy.id)}
                                 disabled={restoreBusy !== null}
                               >
-                                {tx(lang, 'Cancelar', 'Cancel')}
+                                {tx(lang, 'Restaurar', 'Restore')}
                               </button>
-                            </div>
-                          ) : (
-                            <button
-                              className="btn btn-ghost btn-sm"
-                              onClick={() => setConfirmRestore(copy.id)}
-                              disabled={restoreBusy !== null}
-                            >
-                              {tx(lang, 'Restaurar', 'Restore')}
-                            </button>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  </>
-                )}
-                <div className="notice notice-warn" style={{ marginTop: 10 }}>
-                  <Icon name="info" size={16} />
-                  <span>
-                    {tx(
-                      lang,
-                      'Zona de alto riesgo: borrar longlife es irreversible. La restauración es no destructiva, pero conviene tener una copia reciente antes de tocar la bóveda.',
-                      'High-risk zone: deleting longlife is irreversible. Restoring is non-destructive, but you should have a recent backup before touching the vault.',
-                    )}
-                  </span>
-                </div>
-                {!confirmDeleteBackups ? (
-                  <button
-                    className="btn btn-danger btn-sm"
-                    onClick={() => setConfirmDeleteBackups(true)}
-                    disabled={backupBusy || !backupStatus || backupStatus.copies.length === 0}
-                  >
-                    <Icon name="close" size={14} /> {tx(lang, 'Borrar todas las copias', 'Delete all backups')}
-                  </button>
-                ) : (
-                  <div className="notice notice-error">
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                  <div className="notice notice-warn" style={{ marginTop: 10 }}>
                     <Icon name="info" size={16} />
                     <span>
                       {tx(
                         lang,
-                        `¿Borrar definitivamente las ${backupStatus?.copies.length ?? 0} copias de longlife? Esta acción no se puede deshacer.`,
-                        `Permanently delete the ${backupStatus?.copies.length ?? 0} longlife backups? This action cannot be undone.`,
+                        'Zona de alto riesgo: borrar longlife es irreversible. La restauración es no destructiva, pero conviene tener una copia reciente antes de tocar la bóveda.',
+                        'High-risk zone: deleting longlife is irreversible. Restoring is non-destructive, but you should have a recent backup before touching the vault.',
                       )}
                     </span>
-                    <div className="row wrap" style={{ marginTop: 8 }}>
-                      <button className="btn btn-danger btn-sm" onClick={removeBackups} disabled={backupBusy}>
-                        {tx(lang, 'Sí, borrar todo', 'Yes, delete all')}
-                      </button>
-                      <button
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => setConfirmDeleteBackups(false)}
-                        disabled={backupBusy}
-                      >
-                        {tx(lang, 'Cancelar', 'Cancel')}
-                      </button>
-                    </div>
                   </div>
-                )}
-              </div>
-              <div className="notice notice-info">
-                <Icon name="info" size={16} />
-                <span>
-                  {tx(lang, 'La app solo lee y escribe datos en ', 'The app only reads and writes data in ')}
-                  <span className="mono">omega</span>
-                  {tx(
-                    lang,
-                    '. Las copias longlife son una red de seguridad local; no se exportan ni se envían a ningún servidor. Las únicas conexiones de red son la comprobación manual de actualizaciones y la consulta opcional a Open Food Facts al buscar un código de barras.',
-                    '. Longlife backups are a local safety net; they are not exported or sent to any server. The only network connections are the manual update check and the optional Open Food Facts lookup when looking up a barcode.',
+                  {!confirmDeleteBackups ? (
+                    <button
+                      className="btn btn-danger btn-sm"
+                      onClick={() => setConfirmDeleteBackups(true)}
+                      disabled={backupBusy || !backupStatus || backupStatus.copies.length === 0}
+                    >
+                      <Icon name="close" size={14} /> {tx(lang, 'Borrar todas las copias', 'Delete all backups')}
+                    </button>
+                  ) : (
+                    <div className="notice notice-error">
+                      <Icon name="info" size={16} />
+                      <span>
+                        {tx(
+                          lang,
+                          `¿Borrar definitivamente las ${backupStatus?.copies.length ?? 0} copias de longlife? Esta acción no se puede deshacer.`,
+                          `Permanently delete the ${backupStatus?.copies.length ?? 0} longlife backups? This action cannot be undone.`,
+                        )}
+                      </span>
+                      <div className="row wrap" style={{ marginTop: 8 }}>
+                        <button className="btn btn-danger btn-sm" onClick={removeBackups} disabled={backupBusy}>
+                          {tx(lang, 'Sí, borrar todo', 'Yes, delete all')}
+                        </button>
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => setConfirmDeleteBackups(false)}
+                          disabled={backupBusy}
+                        >
+                          {tx(lang, 'Cancelar', 'Cancel')}
+                        </button>
+                      </div>
+                    </div>
                   )}
-                </span>
-              </div>
-              {!isTauri() && (
-                <div className="notice notice-warn">
-                  <Icon name="info" size={16} />
-                  <span>
-                    {tx(
-                      lang,
-                      'Estás en modo navegador: los eventos se guardan en localStorage. En la app de escritorio se usa la bóveda real y los diálogos nativos.',
-                      'You are in browser mode: events are stored in localStorage. The desktop app uses the real vault and native dialogs.',
-                    )}
-                  </span>
                 </div>
-              )}
-              {!isTauri() && (
-                <div className="row between wrap">
-                  <button className="btn btn-ghost btn-sm" onClick={seedSample}>
-                    <Icon name="plus" size={14} /> {tx(lang, 'Cargar datos de ejemplo', 'Load sample data')}
+              </section>
+              <section className="settings-tab-panel" role="tabpanel" hidden={settingsTab !== 'updates'} id={"settings-panel-updates"} aria-labelledby={"settings-tab-updates"}>
+                <UpdatePanel installFormat={info?.install_format} notify={notify} />
+              </section>
+              <section className="settings-tab-panel" role="tabpanel" hidden={settingsTab !== 'about'} id={"settings-panel-about"} aria-labelledby={"settings-tab-about"}>
+                <div className="settings-row">
+                  <span className="muted">{tx(lang, 'Versión', 'Version')}</span>
+                  <span className="value">{info?.version ?? '—'}</span>
+                </div>
+                <div className="settings-row">
+                  <span className="muted">Commit</span>
+                  <span className="value mono">{info?.commit ?? '—'}</span>
+                </div>
+                <div className="settings-row">
+                  <span className="muted">Build</span>
+                  <span className="value">{info?.build_date ?? '—'}</span>
+                </div>
+                <div className="settings-row">
+                  <span className="muted">{tx(lang, 'Esquema de bóveda', 'Vault schema')}</span>
+                  <span className="value">v{info?.vault_schema_version ?? '—'}</span>
+                </div>
+                <div className="settings-row">
+                  <span className="muted">{tx(lang, 'Eventos', 'Events')}</span>
+                  <span className="value">{events.length}</span>
+                </div>
+                <div className="settings-row">
+                  <span className="muted">{tx(lang, 'Repositorio', 'Repository')}</span>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => void openRepository().catch((e) => notify(errorText(e), 'error'))}
+                  >
+                    <Icon name="repo" size={14} /> {tx(lang, 'Abrir GitHub', 'Open GitHub')}
                   </button>
-                  <span className="hint">{tx(lang, 'Solo para probar la interfaz.', 'Only for testing the interface.')}</span>
                 </div>
-              )}
+                <div className="settings-row">
+                  <span className="muted">{tx(lang, 'Privacidad', 'Privacy')}</span>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => void openPrivacyPolicy().catch((e) => notify(errorText(e), 'error'))}
+                  >
+                    <Icon name="info" size={14} /> {tx(lang, 'Ver política de privacidad', 'View privacy policy')}
+                  </button>
+                </div>
+              </section>
+              </div>
             </div>
             <div className="modal-footer">
               <button className="btn btn-ghost" onClick={() => setSettingsOpen(false)}>

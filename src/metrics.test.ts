@@ -11,7 +11,6 @@ import {
   daysBetween,
   estimateTraining,
   goalModeFromEvents,
-  formatProjectionDate,
   latestMeasurement,
   latestNutrition,
   loggedIntakeAverage,
@@ -20,6 +19,7 @@ import {
   reducePRs,
   reduceRoutines,
   reduceSessions,
+  reduceWeights,
   reduceWorkouts,
   safeNum,
   startOfWeek,
@@ -30,6 +30,7 @@ import {
   visibleTrainingEvents,
 } from './metrics';
 import type { BodyMeasures, Exercise, VaultEvent } from './types';
+import { bmrAgeAdjusted, bmrDynamic, bmrEquationLabel } from './energy';
 
 const BODY: BodyMeasures = {
   sex: 'male',
@@ -81,7 +82,9 @@ describe('metrics', () => {
     expect(high).not.toBeNull();
     // Identidad del modelo: TDEE = BMR + TEF + NEAT + EAT (aproximación
     // dada el redondeo de los campos públicos de MacroResult).
-    expect(base!.tdee).toBeCloseTo(base!.bmr + base!.tef + base!.neat + base!.eat, 0);
+    expect(
+      Math.abs(base!.tdee - (base!.bmr + base!.tef + base!.neat + base!.eat)),
+    ).toBeLessThanOrEqual(1);
     expect(auto!.activity).toBeCloseTo(base!.activity, 5);
     expect(auto!.tdee).toBeCloseTo(base!.tdee, 1);
     // Nivel declarado aumenta el gasto base no deportivo (1,15 → 1,38).
@@ -363,6 +366,30 @@ describe('metrics', () => {
     expect(exercises.map((e: Exercise) => [e.id, e.name])).toEqual([['a', 'Sentadilla frontal']]);
   });
 
+  it('keeps exercise descriptions and valid video links across upserts', () => {
+    const exercises = reduceExercises([
+      event('exercise.upsert', {
+        id: 'a',
+        name: 'Press banca',
+        description: 'Agarre neutro, escápula fija, 3×8-10.',
+        videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+      } as unknown as Record<string, unknown>),
+      event('exercise.upsert', {
+        id: 'b',
+        name: 'Remo',
+        description: 42,
+        videoUrl: 'javascript:alert(1)',
+      } as unknown as Record<string, unknown>),
+    ]);
+    expect(exercises[0]).toMatchObject({
+      description: 'Agarre neutro, escápula fija, 3×8-10.',
+      videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    });
+    expect(exercises[1]).toMatchObject({ name: 'Remo' });
+    expect(exercises[1].description).toBeUndefined();
+    expect(exercises[1].videoUrl).toBeUndefined();
+  });
+
   it('keeps the latest version of each routine when editing', () => {
     const routines = reduceRoutines([
       event('routine.saved', { id: 'r1', name: 'Torso', exercises: [{ exerciseId: 'a', sets: 3, reps: 10, load: 0, rest: 90 }] }),
@@ -422,6 +449,50 @@ describe('metrics', () => {
     expect(noScale[0].fatMass).toBeNull();
   });
 
+  it('uses age-specific BMR equations at the extremes of life', () => {
+    const adult = { ...BODY, age: 30 };
+    expect(bmrAgeAdjusted(adult, 70)).toBeCloseTo(bmrDynamic(adult, 70), 6);
+    expect(bmrEquationLabel(adult, 'en')).toBe('Katch-McArdle / Cunningham');
+
+    // Schofield 1985, varones 10–17 años.
+    const teen = { ...BODY, age: 14 };
+    expect(bmrAgeAdjusted(teen, 70)).toBeCloseTo(17.686 * teen.weight + 658.2, 6);
+    expect(bmrEquationLabel(teen, 'es')).toContain('Schofield');
+
+    // Porter 2023 (AJCN), modelo 6 en kJ/d ÷ 4,184.
+    const older = { ...BODY, age: 75 };
+    const kj =
+      31.5239 * older.weight +
+      25.8514 * older.height -
+      24.4321 * older.age +
+      486.2679 +
+      530.5571;
+    expect(bmrAgeAdjusted(older, 70)).toBeCloseTo(kj / 4.184, 6);
+    expect(bmrEquationLabel(older, 'en')).toContain('Porter');
+  });
+
+  it('reduces the weight of BMI equations in adolescents and older adults', () => {
+    const weightOfCunbae = (age: number) =>
+      bodyComposition({ ...BODY, age }).methods.find((m) => m.id === 'cunbae')!.weight ?? 0;
+    const young = weightOfCunbae(16);
+    const adult = weightOfCunbae(40);
+    const older = weightOfCunbae(75);
+    expect(young).toBeLessThan(adult);
+    expect(older).toBeLessThan(adult);
+  });
+
+  it('feeds the weight history from both weight.logged and measurement.saved', () => {
+    const weights = reduceWeights([
+      event('measurement.saved', { ...BODY, date: '2026-01-01', weight: 90 }),
+      event('weight.logged', { date: '2026-01-08', kg: 89 }),
+      event('measurement.saved', { ...BODY, date: '2026-01-08', weight: 88.5 }, '2026-01-08T12:00:00.000Z'),
+    ]);
+    expect(weights).toEqual([
+      { date: '2026-01-01', kg: 90 },
+      { date: '2026-01-08', kg: 88.5 },
+    ]);
+  });
+
   it('adds military equations and weights the consensus', () => {
     const comp = bodyComposition(BODY);
     const ids = comp.methods.map((method) => method.id);
@@ -447,6 +518,17 @@ describe('metrics', () => {
     const armyWith = withAbdomen.methods.find((method) => method.id === 'army')!.value;
     const armyWithout = withoutAbdomen.methods.find((method) => method.id === 'army')!.value;
     expect(armyWith).toBeGreaterThan(armyWithout);
+  });
+
+  it('converts lean-mass SEE from kg to body-fat percentage points', () => {
+    // Boer publishes SEE ≈ 4,4 kg de FFM. Con 80 kg eso son 5,5 puntos de %,
+    // no 4,4: la fiabilidad debe reflejar la conversión.
+    const light = bodyComposition({ ...BODY, weight: 80 });
+    const heavy = bodyComposition({ ...BODY, weight: 160 });
+    const boerLight = light.methods.find((method) => method.id === 'boer')!;
+    const boerHeavy = heavy.methods.find((method) => method.id === 'boer')!;
+    expect(boerLight.reliability).toBeCloseTo(1 - (5.5 - 3) / 6, 2);
+    expect(boerHeavy.reliability ?? 0).toBeGreaterThan(boerLight.reliability ?? 0);
   });
 
   it('matches the published military equation examples', () => {

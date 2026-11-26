@@ -46,8 +46,10 @@ export interface Food {
   custom?: boolean;
   /** EAN-8/EAN-13/UPC-A/UPC-E que identifica el producto en el envase. */
   barcode?: string;
-  /** Origen de los datos: openfoodfacts, manual, etc. */
+  /** Origen de los datos: openfoodfacts, manual, estimate, etc. */
   source?: string;
+  /** Confianza orientativa de la estimación (0–1). */
+  confidence?: number;
   /** Contenido del envase según el fabricante (ej. "500 g"). */
   quantityLabel?: string | null;
   /** Tamaño de la ración indicada por el fabricante (ej. "30 g"). */
@@ -81,6 +83,10 @@ export interface Exercise {
   zone?: string;
   muscle?: string;
   type: string;
+  /** Cómo hacerlo, recomendaciones, errores comunes… Texto plano del usuario. */
+  description?: string;
+  /** Enlace HTTPS a un vídeo explicativo (youtube/vimeo en la app nativa). */
+  videoUrl?: string;
 }
 
 export interface SetEntry {
@@ -172,6 +178,8 @@ export interface Goal {
 }
 
 export type HabitFrequency = 'daily' | 'weekly' | 'monthly';
+/** Clasificación opcional: los hábitos antiguos se tratan como `good`. */
+export type HabitKind = 'good' | 'strong' | 'addictive' | 'bad';
 
 export interface Habit {
   id: string;
@@ -185,6 +193,7 @@ export interface Habit {
   /** Día del mes para hábitos mensuales. */
   dayOfMonth: number;
   points: number;
+  kind?: HabitKind;
   enabled: boolean;
   createdAt: string;
 }

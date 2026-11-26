@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { Food, FoodCategory, FoodLogItem, MealSlot } from '../types';
 import {
   calcFood,
@@ -9,6 +9,7 @@ import {
   mealTotals,
   isGtinLength,
   normalizeBarcode,
+  looksLikeBarcodeInput,
   resizeFoodLogItem,
   searchFoods,
   unitLabel,
@@ -18,7 +19,7 @@ import {
   mealSlots,
 } from '../foodDb';
 import { useLanguage, tx } from '../i18n';
-import { lookupBarcode } from '../vault';
+import { isTauri, lookupBarcode, searchFoodsRemote } from '../vault';
 import { lookupBarcodeCatalog } from '../barcodeCatalog';
 import { errorText } from '../errors';
 import Select from './Select';
@@ -57,10 +58,13 @@ export default function FoodLog({ foods, items, onAdd, onUpdate, onRemove, onCle
   const [editQuantity, setEditQuantity] = useState(1);
   const [editUnit, setEditUnit] = useState('g');
   const [editMeal, setEditMeal] = useState<MealSlot>('desayuno');
-  const [barcodeInput, setBarcodeInput] = useState('');
   const [barcodeBusy, setBarcodeBusy] = useState(false);
   const [barcodeError, setBarcodeError] = useState('');
   const [barcodeNotice, setBarcodeNotice] = useState<string | null>(null);
+  const [remoteResults, setRemoteResults] = useState<Food[]>([]);
+  const [remoteBusy, setRemoteBusy] = useState(false);
+  const [remoteError, setRemoteError] = useState('');
+  const remoteRequest = useRef(0);
   const [lookupFood, setLookupFood] = useState<Food | null>(null);
   const [checksumHold, setChecksumHold] = useState<string | null>(null);
   const [custom, setCustom] = useState({
@@ -116,23 +120,108 @@ export default function FoodLog({ foods, items, onAdd, onUpdate, onRemove, onCle
     setQuantity(defaultQuantity(nextUnit));
   };
 
-  const add = () => {
-    if (!selected || !preview) return;
+  const addFood = (food: Food, qty: number, unitValue: string) => {
+    const calc = calcFood(food, qty, unitValue);
     onAdd({
       id: crypto.randomUUID(),
-      foodId: selected.id,
-      name: selected.name,
-      category: selected.category,
+      foodId: food.id,
+      name: food.name,
+      category: food.category,
       meal,
-      quantity,
-      unit,
-      grams: preview.grams,
-      kcal: preview.kcal,
-      protein: preview.protein,
-      carbs: preview.carbs,
-      fat: preview.fat,
-      fiber: preview.fiber,
+      quantity: qty,
+      unit: unitValue,
+      grams: calc.grams,
+      kcal: calc.kcal,
+      protein: calc.protein,
+      carbs: calc.carbs,
+      fat: calc.fat,
+      fiber: calc.fiber,
     });
+  };
+
+  const add = () => {
+    if (!selected || !preview) return;
+    addFood(selected, quantity, unit);
+  };
+
+  // Igual que el patrón DOI de SinNotas: cada resultado de la base de datos se
+  // puede añadir directamente sin bajar al formulario de porción.
+  const addFromSearch = (food: Food) => {
+    const nextUnit = preferredUnit(food);
+    const qty = defaultQuantity(nextUnit);
+    addFood(food, qty, nextUnit);
+    setSelectedId(food.id);
+    setUnit(nextUnit);
+    setQuantity(qty);
+    setQuery(food.name);
+  };
+
+  const addRemoteFood = async (food: Food) => {
+    try {
+      // Se guarda en la bóveda como alimento personalizado: sus macros quedan
+      // disponibles sin red y se reutilizan en búsquedas futuras.
+      await onCreateFood(food);
+      addFromSearch(food);
+    } catch (e) {
+      setRemoteError(errorText(e));
+    }
+  };
+
+  const isBarcodeQuery = (value: string): boolean => looksLikeBarcodeInput(value);
+
+  // Un solo campo: si contiene 6–14 dígitos se trata como código de barras;
+  // si no, se buscan alimentos en local y, con debounce, en la nube.
+  useEffect(() => {
+    const value = query.trim();
+    const request = ++remoteRequest.current;
+    setRemoteError('');
+    if (isBarcodeQuery(value) || value.length < 2 || barcodeBusy || checksumHold) {
+      setRemoteResults([]);
+      setRemoteBusy(false);
+      return;
+    }
+    if (!isTauri()) {
+      // La CSP del webview y CORS de OFF impiden esta búsqueda en el navegador.
+      setRemoteResults([]);
+      setRemoteBusy(false);
+      setRemoteError(
+        tx(
+          lang,
+          'La búsqueda en la nube solo está disponible en la app nativa; aquí se busca en tu base local.',
+          'Cloud search is only available in the native app; here only your local database is searched.',
+        ),
+      );
+      return;
+    }
+    setRemoteBusy(true);
+    const timer = window.setTimeout(() => {
+      void searchFoodsRemote(value)
+        .then((foods) => {
+          if (request === remoteRequest.current) setRemoteResults(foods);
+        })
+        .catch(() => {
+          if (request === remoteRequest.current) {
+            setRemoteResults([]);
+            setRemoteError(
+              tx(
+                lang,
+                'Open Food Facts no está disponible ahora. Se muestran solo los resultados locales.',
+                'Open Food Facts is unavailable right now. Showing local results only.',
+              ),
+            );
+          }
+        })
+        .finally(() => {
+          if (request === remoteRequest.current) setRemoteBusy(false);
+        });
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [query, barcodeBusy, checksumHold, lang]);
+
+  const submitUnified = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (barcodeBusy) return;
+    if (isBarcodeQuery(query)) void handleBarcode(query);
   };
 
   const startEdit = (item: FoodLogItem) => {
@@ -248,20 +337,12 @@ export default function FoodLog({ foods, items, onAdd, onUpdate, onRemove, onCle
       );
       return;
     }
-    setBarcodeInput('');
     await processBarcode(code);
-  };
-
-  const submitBarcode = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (barcodeBusy) return;
-    void handleBarcode(barcodeInput);
   };
 
   const searchChecksumHold = async () => {
     const code = checksumHold;
     if (!code) return;
-    setBarcodeInput('');
     setBarcodeNotice(
       tx(
         lang,
@@ -333,67 +414,52 @@ export default function FoodLog({ foods, items, onAdd, onUpdate, onRemove, onCle
   return (
     <div className="food-log">
       <div className="food-search">
-        <span className="field-label">{tx(lang, 'Buscar alimento', 'Search food')}</span>
-        <div className="food-search-row">
+        <form className="food-search-row" onSubmit={submitUnified}>
           <input
             className="input"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            maxLength={80}
+            onChange={(event) => {
+              setQuery(event.target.value.slice(0, 80));
+              if (barcodeError) setBarcodeError('');
+              if (checksumHold) {
+                setChecksumHold(null);
+                setBarcodeNotice(null);
+              }
+            }}
             placeholder={tx(
               lang,
-              `${foods.length} alimentos: pollo, arroz, plátano...`,
-              `${foods.length} foods: chicken, rice, banana...`,
+              `Nombre (pollo, arroz...) o 6–14 dígitos. ${foods.length} alimentos en local`,
+              `Name (chicken, rice...) or 6–14 digits. ${foods.length} local foods`,
             )}
-            aria-label={tx(lang, 'Buscar alimento', 'Search food')}
+            aria-label={tx(lang, 'Buscar alimento o código de barras', 'Search food or barcode')}
+            enterKeyHint="search"
           />
-        </div>
-        <form className="food-barcode-row" onSubmit={submitBarcode}>
-          <label className="field food-barcode-field">
-            <span className="field-label">{tx(lang, 'Código de barras', 'Barcode')}</span>
-            <input
-              className="input"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              autoComplete="off"
-              enterKeyHint="search"
-              maxLength={14}
-              placeholder={tx(lang, 'Ej. 8412345678905', 'e.g. 8412345678905')}
-              value={barcodeInput}
-              onChange={(event) => {
-                setBarcodeInput(normalizeBarcode(event.target.value).slice(0, 14));
-                if (barcodeError) setBarcodeError('');
-                if (checksumHold) {
-                  setChecksumHold(null);
-                  setBarcodeNotice(null);
-                }
-              }}
-              aria-label={tx(lang, 'Escribe los dígitos del código de barras', 'Enter the barcode digits')}
-            />
-          </label>
-          <button
-            type="submit"
-            className="btn btn-tonal btn-sm food-barcode-submit"
-            disabled={barcodeBusy || !barcodeInput.trim()}
-          >
-            <Icon name="scan" size={15} />{' '}
-            {barcodeBusy ? tx(lang, 'Buscando…', 'Searching…') : tx(lang, 'Buscar', 'Search')}
+          <button type="submit" className="btn btn-tonal btn-sm food-search-submit" disabled={barcodeBusy}>
+            <Icon name="scan" size={15} /> {barcodeBusy ? tx(lang, 'Buscando…', 'Searching…') : tx(lang, 'Buscar', 'Search')}
           </button>
-          <span className="hint food-barcode-hint">
-            {tx(
-              lang,
-              'Escribe o pega 6–14 dígitos. También sirve un lector USB/Bluetooth que termine en Enter. Si el producto no está en el catálogo local, el código se envía a Open Food Facts (world.openfoodfacts.org) para buscarlo.',
-              'Type or paste 6–14 digits. A USB/Bluetooth scanner ending in Enter also works. If the product is not in the local catalog, the code is sent to Open Food Facts (world.openfoodfacts.org) to look it up.',
-            )}
-          </span>
         </form>
+        <span className="hint food-search-hint">
+          {tx(
+            lang,
+            'Busca en tu base local y, por palabras clave o código, en Open Food Facts (world.openfoodfacts.org). Un lector de barras USB/Bluetooth que termine en Enter también funciona.',
+            'Searches your local database and, by keyword or barcode, Open Food Facts (world.openfoodfacts.org). A USB/Bluetooth barcode scanner ending in Enter also works.',
+          )}
+        </span>
         {barcodeError && (
           <div className="notice notice-error">
             <Icon name="alert" size={16} />
             <span>{barcodeError}</span>
           </div>
         )}
+        {remoteError && (
+          <div className="notice notice-warn">
+            <Icon name="alert" size={16} />
+            <span>{remoteError}</span>
+          </div>
+        )}
         <div className="food-results" role="listbox" aria-label={tx(lang, 'Resultados de alimentos', 'Food results')}>
-          {results.length === 0 ? (
+          {results.length === 0 && remoteResults.length === 0 && !remoteBusy ? (
             <div className="food-result-empty">
               {tx(
                 lang,
@@ -402,23 +468,51 @@ export default function FoodLog({ foods, items, onAdd, onUpdate, onRemove, onCle
               )}
             </div>
           ) : (
-            results.map((food) => (
-              <button
-                key={food.id}
-                type="button"
-                className={`food-result ${selected?.id === food.id ? 'active' : ''}`}
-                onClick={() => chooseFood(food)}
-              >
-                <span>
-                  <strong>{displayName(food)}</strong>
-                  <span className="small muted"> · {categoryLabel(food.category, lang)}</span>
-                  {food.barcode && <span className="small muted mono"> · {food.barcode}</span>}
-                </span>
-                <span className="mono small">{food.per100.kcal} kcal/100 g</span>
-              </button>
-            ))
+            <>
+              {results.map((food) => (
+                <div key={food.id} className={`food-result-row ${selected?.id === food.id ? 'active' : ''}`}>
+                  <button type="button" className="food-result" onClick={() => chooseFood(food)}>
+                    <span>
+                      <strong>{displayName(food)}</strong>
+                      <span className="small muted"> · {categoryLabel(food.category, lang)}</span>
+                      <span className="badge badge-muted">{tx(lang, 'Local', 'Local')}</span>
+                      {food.source === 'estimate' && (
+                        <span className="badge badge-warning">{tx(lang, 'Estimación', 'Estimate')}</span>
+                      )}
+                    </span>
+                    <span className="mono small">{food.per100.kcal} kcal/100 g</span>
+                  </button>
+                  <button type="button" className="btn btn-tonal btn-sm food-result-add" onClick={() => addFromSearch(food)} aria-label={tx(lang, `Añadir ${displayName(food)} a la ingesta`, `Add ${displayName(food)} to the log`)}>
+                    <Icon name="plus" size={13} />
+                  </button>
+                </div>
+              ))}
+              {remoteResults
+                .filter((food) => !results.some((local) => local.barcode === food.barcode))
+                .map((food) => (
+                  <div key={food.id} className="food-result-row">
+                    <button type="button" className="food-result" onClick={() => chooseFood(food)}>
+                      <span>
+                        <strong>{displayName(food)}</strong>
+                        <span className="small muted"> · {categoryLabel(food.category, lang)}</span>
+                        <span className="badge badge-primary">{tx(lang, 'Open Food Facts', 'Open Food Facts')}</span>
+                      </span>
+                      <span className="mono small">{food.per100.kcal} kcal/100 g</span>
+                    </button>
+                    <button type="button" className="btn btn-tonal btn-sm food-result-add" onClick={() => void addRemoteFood(food)} aria-label={tx(lang, `Añadir ${displayName(food)} a la ingesta`, `Add ${displayName(food)} to the log`)}>
+                      <Icon name="plus" size={13} />
+                    </button>
+                  </div>
+                ))}
+            </>
+          )}
+          {remoteBusy && (
+            <div className="food-result-empty">{tx(lang, 'Buscando en Open Food Facts…', 'Searching Open Food Facts…')}</div>
           )}
         </div>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setCustomOpen((open) => !open)}>
+          <Icon name="plus" size={14} /> {tx(lang, 'Añadir alimento manualmente', 'Add food manually')}
+        </button>
         {barcodeNotice && (
           <div className="notice notice-info food-barcode-notice">
             <Icon name="scan" size={16} />

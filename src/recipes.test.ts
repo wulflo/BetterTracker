@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RECIPES, recipeLogItems, recipeMacros, recommendRecipes } from './recipes';
+import { RECIPES, allergensFor, isGlutenOrNut, recipeLogItems, recipeMacros, recommendRecipes } from './recipes';
 
 describe('recetas', () => {
   it('calcula los macros con la misma base de alimentos que el diario', () => {
@@ -42,5 +42,31 @@ describe('recetas', () => {
     expect(items.length).toBeGreaterThan(0);
     expect(new Set(items.map((item) => item.id)).size).toBe(items.length);
     expect(items.every((item) => item.meal === 'comida' && item.unit === 'g')).toBe(true);
+  });
+});
+
+describe('catálogo ampliado de recetas', () => {
+  it('tiene al menos 50 recetas sin gluten ni frutos secos', () => {
+    expect(RECIPES.length).toBeGreaterThanOrEqual(50);
+    for (const recipe of RECIPES) {
+      expect(recipe.ingredients.every((i) => !isGlutenOrNut(i.foodId))).toBe(true);
+    }
+    expect(isGlutenOrNut('pan_integral')).toBe(true);
+    expect(isGlutenOrNut('almendra')).toBe(true);
+    expect(isGlutenOrNut('arroz_integral')).toBe(false);
+  });
+
+  it('rota los resultados al azar de tres en tres', () => {
+    const a = recommendRecipes('cut', undefined, 3, 'es', 0).map((r) => r.id);
+    const b = recommendRecipes('cut', undefined, 3, 'es', 1).map((r) => r.id);
+    const c = recommendRecipes('cut', undefined, 3, 'es', 2).map((r) => r.id);
+    expect(new Set([...a, ...b, ...c]).size).toBeGreaterThan(3);
+    expect(a).toHaveLength(3);
+  });
+
+  it('detecta alérgenos sin incluir gluten ni frutos secos', () => {
+    const recipe = RECIPES.find((r) => r.ingredients.some((i) => i.foodId.startsWith('gambas')))!;
+    expect(allergensFor(recipe)).toContain('marisco');
+    expect(allergensFor(recipe)).not.toContain('lacteos');
   });
 });

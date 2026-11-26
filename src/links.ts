@@ -2,7 +2,6 @@ import { invoke } from '@tauri-apps/api/core';
 import { isTauri } from './vault';
 
 export const REPOSITORY_URL = 'https://github.com/wulflo/BetterTracker';
-export const RELEASES_URL = `${REPOSITORY_URL}/releases`;
 export const PRIVACY_URL = `${REPOSITORY_URL}/blob/main/PRIVACY_POLICY.md`;
 
 /**
@@ -27,4 +26,17 @@ export function openRepository(): Promise<void> {
 
 export function openPrivacyPolicy(): Promise<void> {
   return openExternal(PRIVACY_URL);
+}
+
+/** Dominios de vídeo permitidos por el comando Rust `open_external`. */
+const VIDEO_HOSTS = ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be', 'vimeo.com'];
+
+/** Valida el enlace de vídeo de un ejercicio antes de guardarlo. */
+export function isExerciseVideoUrl(value: string): boolean {
+  if (!/^https:\/\//i.test(value)) return false;
+  try {
+    return VIDEO_HOSTS.includes(new URL(value).hostname.toLowerCase());
+  } catch {
+    return false;
+  }
 }

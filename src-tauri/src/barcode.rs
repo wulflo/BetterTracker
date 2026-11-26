@@ -1,12 +1,26 @@
 use serde_json::{json, Value};
-use std::time::Duration;
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 /* ------------------------------------------------------------------ */
 /* Búsqueda de productos por código de barras (Open Food Facts)       */
 /* ------------------------------------------------------------------ */
 
 const OFF_BASE: &str = "https://world.openfoodfacts.org/api/v2/product";
+const OFF_SEARCH: &str = "https://world.openfoodfacts.org/cgi/search.pl";
+/// Segundo host oficial de Open Food Facts: `world` devuelve 503 con frecuencia.
+const OFF_SEARCH_FALLBACK: &str = "https://fr.openfoodfacts.org/cgi/search.pl";
+const OFF_FIELDS: &str = "code,product_name,product_name_es,generic_name,brands,nutriments,categories_tags,quantity,serving_size";
 const TIMEOUT: Duration = Duration::from_secs(12);
+const MAX_QUERY_CHARS: usize = 80;
+const MAX_SEARCH_RESULTS: usize = 8;
+const SEARCH_CACHE_TTL: Duration = Duration::from_secs(600);
+const SEARCH_CACHE_MAX: usize = 24;
+
+/// Caché pequeña y con caducidad: evita repetir la misma búsqueda al teclear
+/// y crece como máximo hasta `SEARCH_CACHE_MAX` entradas.
+static SEARCH_CACHE: OnceLock<Mutex<HashMap<String, (Instant, Vec<Value>)>>> = OnceLock::new();
 
 /**
  * Busca un producto por EAN/UPC en Open Food Facts.
@@ -23,15 +37,7 @@ pub async fn lookup_barcode(code: String) -> Result<Option<Value>, String> {
         return Err("El código debe tener entre 6 y 14 dígitos (EAN/UPC).".into());
     }
 
-    let client = reqwest::Client::builder()
-        .timeout(TIMEOUT)
-        .user_agent(concat!(
-            "BetterTracker/",
-            env!("CARGO_PKG_VERSION"),
-            " (+https://github.com/wulflo/BetterTracker)"
-        ))
-        .build()
-        .map_err(|e| format!("No se pudo crear el cliente HTTP: {e}"))?;
+    let client = http_client()?;
 
     let mut last_error: Option<String> = None;
     for candidate in variants {
@@ -50,6 +56,135 @@ pub async fn lookup_barcode(code: String) -> Result<Option<Value>, String> {
         Some(error) => Err(error),
         None => Ok(None),
     }
+}
+
+fn http_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .timeout(TIMEOUT)
+        .user_agent(concat!(
+            "BetterTracker/",
+            env!("CARGO_PKG_VERSION"),
+            " (+https://github.com/wulflo/BetterTracker)"
+        ))
+        .build()
+        .map_err(|e| format!("No se pudo crear el cliente HTTP: {e}"))
+}
+
+/// La consulta llega del webview: se recorta, se colapsan espacios y se
+/// descartan caracteres de control y lo que no pueda ser un término de
+/// búsqueda. La URL la construye siempre este módulo, nunca el frontend.
+fn sanitize_search_query(raw: &str) -> Result<String, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err("Escribe un alimento o un código de barras.".into());
+    }
+    if trimmed.chars().count() > MAX_QUERY_CHARS {
+        return Err("La búsqueda es demasiado larga.".into());
+    }
+    if trimmed.chars().any(char::is_control) {
+        return Err("La búsqueda contiene caracteres no válidos.".into());
+    }
+    let clean: String = trimmed
+        .chars()
+        .filter(|c| c.is_alphanumeric() || c.is_whitespace() || "-_,¿?¡!.".contains(*c))
+        .collect();
+    let collapsed = clean.split_whitespace().collect::<Vec<_>>().join(" ");
+    if collapsed.is_empty() {
+        return Err("La búsqueda contiene caracteres no válidos.".into());
+    }
+    Ok(collapsed)
+}
+
+/// Busca alimentos por palabras clave en Open Food Facts. Solo se exponen
+/// nombre, marca y macros; el frontend guarda el elegido como `food.saved`
+/// para usarlo después sin red.
+#[tauri::command]
+pub async fn search_foods_remote(query: String) -> Result<Vec<Value>, String> {
+    let query = sanitize_search_query(&query)?;
+    let cache = SEARCH_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    {
+        let guard = cache.lock().map_err(|_| "Caché de búsqueda no disponible.".to_string())?;
+        if let Some((stored_at, foods)) = guard.get(&query) {
+            if stored_at.elapsed() < SEARCH_CACHE_TTL {
+                return Ok(foods.clone());
+            }
+        }
+    }
+
+    let client = http_client()?;
+    let mut payload: Option<Value> = None;
+    let mut last_error = String::new();
+    // Solo hosts oficiales escritos en el código: el usuario no controla la URL.
+    for endpoint in [OFF_SEARCH, OFF_SEARCH_FALLBACK] {
+        let request = client.get(endpoint).query(&[
+            ("search_terms", query.as_str()),
+            ("json", "1"),
+            ("page_size", &MAX_SEARCH_RESULTS.to_string()),
+            ("fields", OFF_FIELDS),
+        ]);
+        match request.send().await {
+            Ok(response) if response.status().is_success() => {
+                match response.json::<Value>().await {
+                    Ok(value) => {
+                        payload = Some(value);
+                        break;
+                    }
+                    Err(error) => {
+                        last_error = format!("Respuesta inválida de Open Food Facts: {error}");
+                    }
+                }
+            }
+            Ok(response) => {
+                last_error = format!(
+                    "Open Food Facts respondió con estado {}.",
+                    response.status()
+                );
+            }
+            Err(error) => {
+                last_error = format!("No se pudo consultar Open Food Facts: {error}");
+            }
+        }
+    }
+    let payload = payload.ok_or_else(|| {
+        if last_error.is_empty() {
+            "Open Food Facts no devolvió resultados.".to_string()
+        } else {
+            last_error
+        }
+    })?;
+
+    let mut results = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    if let Some(products) = payload.get("products").and_then(Value::as_array) {
+        for product in products {
+            let code: String = product
+                .get("code")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .chars()
+                .filter(|c| c.is_ascii_digit())
+                .collect();
+            if code.is_empty() || !seen.insert(code.clone()) {
+                continue;
+            }
+            if let Some(food) = product_for_barcode(product, &code) {
+                results.push(food);
+            }
+            if results.len() >= MAX_SEARCH_RESULTS {
+                break;
+            }
+        }
+    }
+
+    if let Ok(mut guard) = cache.lock() {
+        if guard.len() >= SEARCH_CACHE_MAX {
+            if let Some(key) = guard.keys().next().cloned() {
+                guard.remove(&key);
+            }
+        }
+        guard.insert(query, (Instant::now(), results.clone()));
+    }
+    Ok(results)
 }
 
 /// El mismo producto puede aparecer como UPC-A de 12 dígitos, EAN-13 con cero
@@ -266,6 +401,15 @@ mod tests {
         let ean = barcode_variants("8412345678905");
         assert!(ean.contains(&"8412345678905".to_string()));
         assert!(ean.contains(&"08412345678905".to_string()));
+    }
+
+    #[test]
+    fn sanitizes_remote_search_queries() {
+        assert_eq!(sanitize_search_query("  pollo   asado  ").unwrap(), "pollo asado");
+        assert!(sanitize_search_query("").is_err());
+        assert!(sanitize_search_query(&"a".repeat(MAX_QUERY_CHARS + 1)).is_err());
+        assert!(sanitize_search_query("leche\n<script>").is_err());
+        assert_eq!(sanitize_search_query("café-con-leche").unwrap(), "café-con-leche");
     }
 
     #[test]

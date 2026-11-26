@@ -1,4 +1,3 @@
-import React from 'react';
 import type { Lang } from '../i18n';
 import { tx } from '../i18n';
 import type { ProjectionInputsController } from '../projectionInputs';

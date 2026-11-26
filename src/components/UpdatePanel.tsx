@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Icon } from './Icons';
 import { locale, tx, useLanguage } from '../i18n';

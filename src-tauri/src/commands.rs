@@ -688,9 +688,10 @@ fn publish_apk(app: &AppHandle, temp_path: &Path, version: &str) -> Result<Strin
     Ok(format!("Descargas/{PUBLIC_SUBDIR}/{file_name}"))
 }
 
-/// Abre un enlace externo solo si pertenece al repositorio oficial. Se ejecuta
-/// desde Rust para que el webview no necesite `opener:allow-open-url` y no
-/// pueda abrir dominios arbitrarios.
+/// Abre un enlace externo solo si pertenece al repositorio oficial o es un
+/// vídeo de un dominio permitido en las descripciones de ejercicios. Se
+/// ejecuta desde Rust para que el webview no necesite `opener:allow-open-url`
+/// y no pueda abrir dominios arbitrarios.
 #[tauri::command]
 pub fn open_external(app: AppHandle, url: String) -> Result<(), String> {
     validate_external_url(&url)?;
@@ -702,6 +703,13 @@ pub fn open_external(app: AppHandle, url: String) -> Result<(), String> {
 
 fn validate_external_url(value: &str) -> Result<(), String> {
     const REPOSITORY: &str = "https://github.com/wulflo/BetterTracker";
+    const VIDEO_HOSTS: [&str; 5] = [
+        "youtube.com",
+        "www.youtube.com",
+        "m.youtube.com",
+        "youtu.be",
+        "vimeo.com",
+    ];
     let url = value.trim();
     if url.is_empty()
         || url
@@ -711,44 +719,29 @@ fn validate_external_url(value: &str) -> Result<(), String> {
     {
         return Err("El enlace no es válido.".into());
     }
-    let rest = url
-        .strip_prefix(REPOSITORY)
-        .ok_or_else(|| "El enlace no pertenece a Better Fitness Tracker.".to_string())?;
-    if rest.is_empty()
-        || rest == "/"
-        || rest == "/releases"
-        || rest.starts_with("/releases/")
-        || rest == "/blob/main/PRIVACY_POLICY.md"
-    {
-        Ok(())
-    } else {
-        Err("El enlace no pertenece a Better Fitness Tracker.".into())
+    if let Some(rest) = url.strip_prefix(REPOSITORY) {
+        if rest.is_empty()
+            || rest == "/"
+            || rest == "/releases"
+            || rest.starts_with("/releases/")
+            || rest == "/blob/main/PRIVACY_POLICY.md"
+        {
+            return Ok(());
+        }
     }
+    // Vídeos de ejercicios: solo HTTPS y hosts exactos (evita `youtube.com.evil`).
+    if let Some(after_scheme) = url.strip_prefix("https://") {
+        let host = after_scheme.split('/').next().unwrap_or("");
+        if VIDEO_HOSTS.contains(&host) && after_scheme.len() > host.len() {
+            return Ok(());
+        }
+    }
+    Err("El enlace no pertenece a Better Fitness Tracker.".into())
 }
 
 #[tauri::command]
 pub fn get_app_info() -> version::AppInfo {
     version::app_info()
-}
-
-#[tauri::command]
-pub fn get_app_version() -> version::AppInfo {
-    version::app_info()
-}
-
-#[tauri::command]
-pub fn get_version_info() -> version::AppInfo {
-    version::app_info()
-}
-
-#[tauri::command]
-pub fn get_build_info() -> version::AppInfo {
-    version::app_info()
-}
-
-#[tauri::command]
-pub fn get_version() -> String {
-    version::VERSION.to_string()
 }
 
 #[tauri::command]
@@ -862,6 +855,13 @@ mod tests {
         assert!(validate_external_url("javascript:alert(1)").is_err());
         assert!(validate_external_url("https://github.com/wulflo/BetterTracker/../../evil")
             .is_err());
+        // Vídeos permitidos en las descripciones de ejercicios.
+        assert!(validate_external_url("https://youtu.be/dQw4w9WgXcQ").is_ok());
+        assert!(validate_external_url("https://www.youtube.com/watch?v=dQw4w9WgXcQ").is_ok());
+        assert!(validate_external_url("https://vimeo.com/123456").is_ok());
+        assert!(validate_external_url("https://youtube.com.evil.com/watch?v=x").is_err());
+        assert!(validate_external_url("https://youtu.be/../evil").is_err());
+        assert!(validate_external_url("http://youtu.be/dQw4w9WgXcQ").is_err());
     }
 
     #[test]

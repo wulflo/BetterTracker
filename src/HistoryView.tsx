@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import type { Exercise, PR, Routine, Session, VaultEvent, Workout } from './types';
+import { autoIntakeEntries, autoIntakeSummary } from './projectionInputs';
+import { useEffect, useMemo, useState } from 'react';
+import type { Exercise, PR, Session, VaultEvent, Workout } from './types';
 import { EMPTY_MEASURES } from './types';
 import { appendEvent, newEvent } from './vault';
 import {
@@ -88,6 +89,10 @@ export default function HistoryView({ deviceId, events, exercises, onRefresh, no
       activityLevelFromEvents(events),
       'es',
       avgSteps,
+      {
+        summary: exerciseSummary,
+        declaredPerWeek: training.effectivePerWeek,
+      },
     );
     if (!macros) return undefined;
     const water = computeWaterGuidance(body, training.weeklyMinutes, 0);
@@ -100,6 +105,39 @@ export default function HistoryView({ deviceId, events, exercises, onRefresh, no
       water: water.targetMl,
     };
   }, [body, exerciseSummary, events, avgSteps]);
+  const autoIntake = useMemo(() => autoIntakeSummary(events), [events]);
+  const autoEntries = useMemo(() => autoIntakeEntries(events), [events]);
+  const [autoDay, setAutoDay] = useState(() => new Date().toISOString().slice(0, 10));
+  const [autoKcal, setAutoKcal] = useState(0);
+  const [autoBusy, setAutoBusy] = useState(false);
+
+  const saveAuto = async (date: string, kcal: number, enabled: boolean) => {
+    if (!date || !Number.isFinite(kcal) || kcal < 0) return;
+    const previous = autoEntries.find((entry) => entry.date === date);
+    setAutoBusy(true);
+    try {
+      await appendEvent(newEvent(deviceId, 'intake.auto', {
+        date,
+        enabled,
+        kcal: Math.round(kcal),
+        protein: previous?.protein ?? 0,
+        carbs: previous?.carbs ?? 0,
+        fat: previous?.fat ?? 0,
+        fiber: previous?.fiber ?? 0,
+      }));
+      await onRefresh();
+      notify(
+        enabled
+          ? tx(lang, `Ingesta del ${date} guardada.`, `Intake for ${date} saved.`)
+          : tx(lang, `Registro del ${date} cancelado.`, `Entry for ${date} cancelled.`),
+        'success',
+      );
+    } catch (e) {
+      notify(tx(lang, `No se pudo guardar: ${String(e)}`, `Could not save: ${String(e)}`), 'error');
+    } finally {
+      setAutoBusy(false);
+    }
+  };
   const nutrition = useMemo(
     () => nutritionDigest(nutritionEntries, 8, new Date(), nutritionTargets, currentWeight, lang),
     [nutritionEntries, nutritionTargets, currentWeight, lang],
@@ -212,6 +250,65 @@ export default function HistoryView({ deviceId, events, exercises, onRefresh, no
             : tx(lang, 'Solo se promedian los días con registro; una semana incompleta no penaliza.', 'Only logged days are averaged; an incomplete week is not penalized.')}
         </span>
       </div>
+
+      {autoIntake.days >= 5 && (
+        <div className="notice notice-info">
+          <Icon name="check" size={16} />
+          <span>
+            {tx(
+              lang,
+              `Registro automático de ingesta: ${autoIntake.days}/30 días, media ${Math.round(autoIntake.avg)} kcal/día. La proyección usa esa media en lugar de la ingesta manual.`,
+              `Automatic intake logging: ${autoIntake.days}/30 days, average ${Math.round(autoIntake.avg)} kcal/day. The projection uses that average instead of the manual intake.`,
+            )}
+          </span>
+        </div>
+      )}
+
+      <section className="card">
+        <div className="card-header">
+          <div>
+            <div className="card-title"><Icon name="check" /> {tx(lang, 'Ajustar ingestas registradas', 'Adjust logged intake')}</div>
+            <div className="card-sub">{tx(lang, 'Puedes registrar fechas pasadas, corregir las calorías de un día o cancelar el registro si comiste más o menos de lo anotado.', 'You can backfill dates, correct a day’s calories or cancel an entry if you ate more or less than recorded.')}</div>
+          </div>
+        </div>
+        <div className="card-body stack">
+          <div className="row wrap">
+            <label className="field">
+              <span className="field-label">{tx(lang, 'Fecha', 'Date')}</span>
+              <input className="input" type="date" value={autoDay} max={new Date().toISOString().slice(0, 10)} onChange={(e) => setAutoDay(e.target.value)} />
+            </label>
+            <label className="field">
+              <span className="field-label">{tx(lang, 'Kcal del día', 'Day calories')}</span>
+              <input className="input" type="number" inputMode="numeric" min={0} max={12000} value={autoKcal || ''} placeholder="2000" onChange={(e) => setAutoKcal(Number(e.target.value))} />
+            </label>
+            <button className="btn btn-primary" disabled={autoBusy || !autoDay || autoKcal <= 0} onClick={() => void saveAuto(autoDay, autoKcal, true)}>
+              <Icon name="plus" size={14} /> {tx(lang, 'Guardar ingesta', 'Save intake')}
+            </button>
+          </div>
+          {autoEntries.length > 0 && (
+            <div className="list">
+              {autoEntries.map((entry) => (
+                <div key={entry.date} className="list-item">
+                  <div className="list-item-main">
+                    <span className="list-item-title">{entry.date}</span>
+                    <span className="list-item-sub">
+                      {entry.enabled ? `${entry.kcal} kcal` : tx(lang, 'Cancelado', 'Cancelled')}
+                    </span>
+                  </div>
+                  <div className="list-item-meta">
+                    <button className="btn btn-ghost btn-sm" disabled={autoBusy} onClick={() => { setAutoDay(entry.date); setAutoKcal(entry.kcal); }}>
+                      {tx(lang, 'Corregir', 'Correct')}
+                    </button>
+                    <button className="btn btn-ghost btn-sm" disabled={autoBusy} onClick={() => void saveAuto(entry.date, entry.kcal, !entry.enabled)}>
+                      {entry.enabled ? tx(lang, 'Cancelar', 'Cancel') : tx(lang, 'Reactivar', 'Re-enable')}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
 
       {tab === 'nutrition' && (
         <div className="stack">

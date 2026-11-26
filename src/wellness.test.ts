@@ -4,6 +4,8 @@ import {
   autoSummary,
   habitScheduleLabel,
   habitStreaks,
+  habitSignedPoints,
+  habitSucceeded,
   isHabitDue,
   reduceHabits,
   reduceHabitLogs,
@@ -30,7 +32,27 @@ const HABIT: Habit = {
   createdAt: '2026-01-01T00:00:00.000Z',
 };
 
-describe('wellness', () => {
+describe('wellness', () => {  it('clasifica hábitos y aplica puntos negativos a adicciones y malos hábitos', () => {
+    const events = [
+      event('habit.saved', { ...HABIT, id: 'bad', name: 'Fumar', kind: 'bad' }, '2026-01-01T00:00:00.000Z'),
+      event('habit.saved', { ...HABIT, id: 'gym', name: 'Gimnasio', kind: 'strong' }, '2026-01-01T01:00:00.000Z'),
+      event('habit.saved', { ...HABIT, id: 'smoke', name: 'Fumar', kind: 'addictive' }, '2026-01-01T02:00:00.000Z'),
+      event('habit.saved', { ...HABIT, id: 'old' }, '2026-01-01T03:00:00.000Z'),
+    ];
+    const habits = reduceHabits(events);
+    expect(habits.find((h) => h.id === 'bad')?.kind).toBe('bad');
+    expect(habits.find((h) => h.id === 'old')?.kind).toBe('good');
+    const bad = habits.find((h) => h.id === 'bad')!;
+    const gym = habits.find((h) => h.id === 'gym')!;
+    expect(habitSignedPoints(bad, 10)).toBe(-10);
+    expect(habitSignedPoints(gym, 10)).toBe(10);
+    const logs = reduceHabitLogs([event('habit.logged', { habitId: 'bad', date: todayISO(), completed: true, points: 10 })]);
+    expect(habitSucceeded(bad, logs)).toBe(false);
+    const digest = wellnessDigest(events, new Date(), 'es');
+    expect(digest.counts).toEqual({ good: 1, strong: 1, addictive: 1, bad: 1 });
+  });
+
+
   it('normaliza el resumen a cinco palabras', () => {
     expect(sanitizeSummary('  Hoy   me siento muy bien y con energía  ')).toBe('Hoy me siento muy bien');
     expect(summaryWordCount('Hoy me siento muy bien')).toBe(5);

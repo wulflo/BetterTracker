@@ -24,6 +24,46 @@ export interface RecipeIngredient {
   grams: number;
 }
 
+export type AllergenId = 'lacteos' | 'huevo' | 'soja' | 'pescado' | 'marisco' | 'sesamo';
+
+export const ALLERGEN_LABELS: Record<AllergenId, [string, string]> = {
+  lacteos: ['Lácteos', 'Dairy'],
+  huevo: ['Huevo', 'Egg'],
+  soja: ['Soja', 'Soy'],
+  pescado: ['Pescado', 'Fish'],
+  marisco: ['Marisco', 'Shellfish'],
+  sesamo: ['Sésamo', 'Sesame'],
+};
+
+/** Alérgenos declarados explícitamente por id de alimento (sin inferencia por texto). */
+export const ALLERGEN_BY_FOOD: Record<string, AllergenId[]> = {};
+
+for (const id of ['leche_entera', 'leche_semidesnatada', 'leche_desnatada', 'yogur_natural', 'yogur_griego', 'yogur_desnatado', 'queso_fresco', 'queso_curado', 'requeson', 'mantequilla', 'nata', 'kefir', 'chocolate_leche', 'helado_vainilla', 'tarta_queso']) {
+  ALLERGEN_BY_FOOD[id] = [...(ALLERGEN_BY_FOOD[id] ?? []), 'lacteos'];
+}
+for (const id of ['huevo', 'clara_huevo', 'huevo_codorniz', 'mayonesa']) {
+  ALLERGEN_BY_FOOD[id] = [...(ALLERGEN_BY_FOOD[id] ?? []), 'huevo'];
+}
+for (const id of ['tofu', 'tempeh', 'soja_cocida', 'edamame', 'leche_soja', 'salsa_soja']) {
+  ALLERGEN_BY_FOOD[id] = [...(ALLERGEN_BY_FOOD[id] ?? []), 'soja'];
+}
+for (const id of ['salmon', 'atun_fresco', 'atun_agua', 'atun_aceite', 'merluza', 'bacalao', 'dorada', 'lubina', 'sardinas', 'boquerones']) {
+  ALLERGEN_BY_FOOD[id] = [...(ALLERGEN_BY_FOOD[id] ?? []), 'pescado'];
+}
+for (const id of ['gambas', 'langostinos', 'mejillones', 'almejas', 'calamar', 'pulpo']) {
+  ALLERGEN_BY_FOOD[id] = [...(ALLERGEN_BY_FOOD[id] ?? []), 'marisco'];
+}
+ALLERGEN_BY_FOOD['sesamo'] = ['sesamo'];
+
+/** Alérgenos presentes en los ingredientes (sin gluten ni frutos secos por diseño). */
+export function allergensFor(recipe: Recipe): AllergenId[] {
+  const found = new Set<AllergenId>();
+  for (const ingredient of recipe.ingredients) {
+    for (const allergen of ALLERGEN_BY_FOOD[ingredient.foodId] ?? []) found.add(allergen);
+  }
+  return [...found];
+}
+
 export interface Recipe {
   id: string;
   name: string;
@@ -110,18 +150,18 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: 'cut-yogurt-bowl',
-    name: 'Yogur griego con plátano y nueces',
+    name: 'Yogur griego con plátano y chía',
     goal: 'cut',
     meal: 'snack',
     description: 'Snack con proteína, potasio y una porción pequeña de grasa saludable.',
-    science: 'El yogur griego duplica la proteína del yogur normal; las nueces añaden ácidos grasos y fibra con una porción controlada.',
+    science: 'El yogur griego duplica la proteína del yogur normal; la chía añade fibra soluble y ácidos grasos con una porción controlada.',
     minutes: 5,
     servings: 1,
     tags: ['snack', 'proteico'],
     ingredients: [
       { foodId: 'yogur_griego', grams: 170 },
       { foodId: 'platano', grams: 100 },
-      { foodId: 'nuez', grams: 15 },
+      { foodId: 'chia', grams: 10 },
       { foodId: 'avena', grams: 20 },
     ],
   },
@@ -129,7 +169,7 @@ export const RECIPES: Recipe[] = [
   // ---------------------------------------------------------- mantenimiento
   {
     id: 'maintain-pasta-tuna',
-    name: 'Pasta integral con atún y tomate',
+    name: 'Arroz integral con atún y tomate',
     goal: 'maintain',
     meal: 'comida',
     description: 'Plato equilibrado con carbohidrato, proteína y licopeno.',
@@ -138,7 +178,7 @@ export const RECIPES: Recipe[] = [
     servings: 1,
     tags: ['equilibrado', 'económico'],
     ingredients: [
-      { foodId: 'pasta_integral', grams: 180 },
+      { foodId: 'arroz_integral', grams: 180 },
       { foodId: 'atun_agua', grams: 120 },
       { foodId: 'tomate', grams: 150 },
       { foodId: 'aceite_oliva', grams: 10 },
@@ -200,7 +240,7 @@ export const RECIPES: Recipe[] = [
   // ------------------------------------------------------------- superávit
   {
     id: 'bulk-shake',
-    name: 'Batido de avena, plátano y cacahuete',
+    name: 'Batido de avena, plátano y suero',
     goal: 'bulk',
     meal: 'desayuno',
     description: 'Desayuno líquido denso en energía para días de mucho volumen.',
@@ -212,7 +252,7 @@ export const RECIPES: Recipe[] = [
       { foodId: 'avena', grams: 80 },
       { foodId: 'leche_entera', grams: 300 },
       { foodId: 'platano', grams: 120 },
-      { foodId: 'crema_cacahuete', grams: 20 },
+      { foodId: 'semillas_calabaza', grams: 20 },
       { foodId: 'proteina_suero', grams: 30 },
     ],
   },
@@ -235,16 +275,16 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: 'bulk-pasta-salmon',
-    name: 'Pasta con salmón y parmesano',
+    name: 'Arroz con salmón y queso fresco',
     goal: 'bulk',
     meal: 'cena',
     description: 'Cena energética con omega-3 y proteína de alta calidad.',
-    science: 'La pasta alrededor del entrenamiento favorece la recuperación; el salmón aporta grasa antiinflamatoria y el parmesano calcio y umami.',
+    science: 'El arroz alrededor del entrenamiento favorece la recuperación; el salmón aporta grasa antiinflamatoria y el queso fresco calcio y umami.',
     minutes: 22,
     servings: 1,
     tags: ['omega-3', 'recuperación'],
     ingredients: [
-      { foodId: 'pasta', grams: 220 },
+      { foodId: 'arroz_blanco', grams: 220 },
       { foodId: 'salmon', grams: 160 },
       { foodId: 'tomate', grams: 100 },
       { foodId: 'aceite_oliva', grams: 12 },
@@ -253,7 +293,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: 'bulk-eggs-toast',
-    name: 'Huevos, pan integral y crema de cacahuete',
+    name: 'Huevos, tortilla de maíz y aguacate',
     goal: 'bulk',
     meal: 'desayuno',
     description: 'Desayuno sólido con proteína, grasa y carbohidrato para empezar con energía.',
@@ -263,9 +303,541 @@ export const RECIPES: Recipe[] = [
     tags: ['proteico', 'rápido'],
     ingredients: [
       { foodId: 'huevo', grams: 150 },
-      { foodId: 'pan_integral', grams: 70 },
-      { foodId: 'mantequilla_cacahuete', grams: 20 },
+      { foodId: 'tortilla_maiz', grams: 70 },
+      { foodId: 'aguacate', grams: 50 },
       { foodId: 'platano', grams: 100 },
+    ],
+  },
+  {
+    id: 'extra-01',
+    name: 'Bowl de pollo, arroz integral y brócoli',
+    goal: 'cut',
+    meal: 'comida',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Alta saciedad por caloría: proteína magra, fibra de verdura y grasa en porción pequeña.',
+    minutes: 12,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'proteico'],
+    ingredients: [
+      { foodId: 'pollo_pechuga', grams: 120 },{ foodId: 'arroz_integral', grams: 100 },{ foodId: 'brocoli', grams: 120 },{ foodId: 'aceite_oliva', grams: 10 }
+    ],
+  },
+  {
+    id: 'extra-02',
+    name: 'Bowl de pavo, patata y calabacín',
+    goal: 'maintain',
+    meal: 'cena',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Reparte la proteína entre comidas y acompáñala de fibra y grasa insoluble para mantener la saciedad y la masa magra.',
+    minutes: 13,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'equilibrado'],
+    ingredients: [
+      { foodId: 'pavo_pechuga', grams: 135 },{ foodId: 'patata', grams: 120 },{ foodId: 'calabacin', grams: 130 },{ foodId: 'aguacate', grams: 15 }
+    ],
+  },
+  {
+    id: 'extra-03',
+    name: 'Bowl de ternera, tortilla de maíz y champiñón',
+    goal: 'bulk',
+    meal: 'desayuno',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Aporta densidad energética moderada y carbohidrato alrededor del entrenamiento para recuperar glucógeno sin exceso de grasa.',
+    minutes: 14,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'proteico'],
+    ingredients: [
+      { foodId: 'ternera_solomillo', grams: 150 },{ foodId: 'tortilla_maiz', grams: 140 },{ foodId: 'champinon', grams: 140 },{ foodId: 'chia', grams: 20 }
+    ],
+  },
+  {
+    id: 'extra-04',
+    name: 'Ensalada de huevo con tomate y arroz integral',
+    goal: 'cut',
+    meal: 'snack',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Alta saciedad por caloría: proteína magra, fibra de verdura y grasa en porción pequeña.',
+    minutes: 15,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'proteico'],
+    ingredients: [
+      { foodId: 'huevo', grams: 165 },{ foodId: 'arroz_integral', grams: 160 },{ foodId: 'tomate', grams: 150 },{ foodId: 'lino', grams: 10 }
+    ],
+  },
+  {
+    id: 'extra-05',
+    name: 'Bowl de tofu, patata y zanahoria',
+    goal: 'maintain',
+    meal: 'comida',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Reparte la proteína entre comidas y acompáñala de fibra y grasa insoluble para mantener la saciedad y la masa magra.',
+    minutes: 16,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'equilibrado'],
+    ingredients: [
+      { foodId: 'tofu', grams: 180 },{ foodId: 'patata', grams: 100 },{ foodId: 'zanahoria', grams: 160 },{ foodId: 'sesamo', grams: 15 }
+    ],
+  },
+  {
+    id: 'extra-06',
+    name: 'Bowl de tempeh, tortilla de maíz y alcachofa',
+    goal: 'bulk',
+    meal: 'cena',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Aporta densidad energética moderada y carbohidrato alrededor del entrenamiento para recuperar glucógeno sin exceso de grasa.',
+    minutes: 17,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'proteico'],
+    ingredients: [
+      { foodId: 'tempeh', grams: 120 },{ foodId: 'tortilla_maiz', grams: 120 },{ foodId: 'alcachofa', grams: 170 },{ foodId: 'aceitunas', grams: 20 }
+    ],
+  },
+  {
+    id: 'extra-07',
+    name: 'Bowl de salmón, arroz integral y pimiento',
+    goal: 'cut',
+    meal: 'desayuno',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Alta saciedad por caloría: proteína magra, fibra de verdura y grasa en porción pequeña.',
+    minutes: 18,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'proteico'],
+    ingredients: [
+      { foodId: 'salmon', grams: 135 },{ foodId: 'arroz_integral', grams: 140 },{ foodId: 'pimiento', grams: 120 },{ foodId: 'aceite_oliva', grams: 10 }
+    ],
+  },
+  {
+    id: 'extra-08',
+    name: 'Ensalada de atún con lechuga y patata',
+    goal: 'maintain',
+    meal: 'snack',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Reparte la proteína entre comidas y acompáñala de fibra y grasa insoluble para mantener la saciedad y la masa magra.',
+    minutes: 19,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'equilibrado'],
+    ingredients: [
+      { foodId: 'atun_fresco', grams: 150 },{ foodId: 'patata', grams: 160 },{ foodId: 'lechuga', grams: 130 },{ foodId: 'aguacate', grams: 15 }
+    ],
+  },
+  {
+    id: 'extra-09',
+    name: 'Bowl de merluza, tortilla de maíz y espinaca',
+    goal: 'bulk',
+    meal: 'comida',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Aporta densidad energética moderada y carbohidrato alrededor del entrenamiento para recuperar glucógeno sin exceso de grasa.',
+    minutes: 20,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'proteico'],
+    ingredients: [
+      { foodId: 'merluza', grams: 165 },{ foodId: 'tortilla_maiz', grams: 100 },{ foodId: 'espinaca', grams: 140 },{ foodId: 'chia', grams: 20 }
+    ],
+  },
+  {
+    id: 'extra-10',
+    name: 'Bowl de gambas, arroz integral y berenjena',
+    goal: 'cut',
+    meal: 'cena',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Alta saciedad por caloría: proteína magra, fibra de verdura y grasa en porción pequeña.',
+    minutes: 21,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'proteico'],
+    ingredients: [
+      { foodId: 'gambas', grams: 180 },{ foodId: 'arroz_integral', grams: 120 },{ foodId: 'berenjena', grams: 150 },{ foodId: 'lino', grams: 10 }
+    ],
+  },
+  {
+    id: 'extra-11',
+    name: 'Bowl de queso fresco, patata y espárrago',
+    goal: 'maintain',
+    meal: 'desayuno',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Reparte la proteína entre comidas y acompáñala de fibra y grasa insoluble para mantener la saciedad y la masa magra.',
+    minutes: 22,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'equilibrado'],
+    ingredients: [
+      { foodId: 'queso_fresco', grams: 120 },{ foodId: 'patata', grams: 140 },{ foodId: 'esparrago', grams: 160 },{ foodId: 'sesamo', grams: 15 }
+    ],
+  },
+  {
+    id: 'extra-12',
+    name: 'Ensalada de yogur griego con pepino y tortilla de maíz',
+    goal: 'bulk',
+    meal: 'snack',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Aporta densidad energética moderada y carbohidrato alrededor del entrenamiento para recuperar glucógeno sin exceso de grasa.',
+    minutes: 23,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'proteico'],
+    ingredients: [
+      { foodId: 'yogur_griego', grams: 135 },{ foodId: 'tortilla_maiz', grams: 160 },{ foodId: 'pepino', grams: 170 },{ foodId: 'aceitunas', grams: 20 }
+    ],
+  },
+  {
+    id: 'extra-13',
+    name: 'Bowl de suero, arroz integral y coliflor',
+    goal: 'cut',
+    meal: 'comida',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Alta saciedad por caloría: proteína magra, fibra de verdura y grasa en porción pequeña.',
+    minutes: 24,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'proteico'],
+    ingredients: [
+      { foodId: 'proteina_suero', grams: 150 },{ foodId: 'arroz_integral', grams: 100 },{ foodId: 'coliflor', grams: 120 },{ foodId: 'aceite_oliva', grams: 10 }
+    ],
+  },
+  {
+    id: 'extra-14',
+    name: 'Bowl de pollo, patata y brócoli',
+    goal: 'maintain',
+    meal: 'cena',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Reparte la proteína entre comidas y acompáñala de fibra y grasa insoluble para mantener la saciedad y la masa magra.',
+    minutes: 25,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'equilibrado'],
+    ingredients: [
+      { foodId: 'pollo_pechuga', grams: 165 },{ foodId: 'patata', grams: 120 },{ foodId: 'brocoli', grams: 130 },{ foodId: 'aguacate', grams: 15 }
+    ],
+  },
+  {
+    id: 'extra-15',
+    name: 'Bowl de pavo, tortilla de maíz y calabacín',
+    goal: 'bulk',
+    meal: 'desayuno',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Aporta densidad energética moderada y carbohidrato alrededor del entrenamiento para recuperar glucógeno sin exceso de grasa.',
+    minutes: 26,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'proteico'],
+    ingredients: [
+      { foodId: 'pavo_pechuga', grams: 180 },{ foodId: 'tortilla_maiz', grams: 140 },{ foodId: 'calabacin', grams: 140 },{ foodId: 'chia', grams: 20 }
+    ],
+  },
+  {
+    id: 'extra-16',
+    name: 'Ensalada de ternera con champiñón y arroz integral',
+    goal: 'cut',
+    meal: 'snack',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Alta saciedad por caloría: proteína magra, fibra de verdura y grasa en porción pequeña.',
+    minutes: 27,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'proteico'],
+    ingredients: [
+      { foodId: 'ternera_solomillo', grams: 120 },{ foodId: 'arroz_integral', grams: 160 },{ foodId: 'champinon', grams: 150 },{ foodId: 'lino', grams: 10 }
+    ],
+  },
+  {
+    id: 'extra-17',
+    name: 'Bowl de huevo, patata y tomate',
+    goal: 'maintain',
+    meal: 'comida',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Reparte la proteína entre comidas y acompáñala de fibra y grasa insoluble para mantener la saciedad y la masa magra.',
+    minutes: 28,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'equilibrado'],
+    ingredients: [
+      { foodId: 'huevo', grams: 135 },{ foodId: 'patata', grams: 100 },{ foodId: 'tomate', grams: 160 },{ foodId: 'sesamo', grams: 15 }
+    ],
+  },
+  {
+    id: 'extra-18',
+    name: 'Bowl de tofu, tortilla de maíz y zanahoria',
+    goal: 'bulk',
+    meal: 'cena',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Aporta densidad energética moderada y carbohidrato alrededor del entrenamiento para recuperar glucógeno sin exceso de grasa.',
+    minutes: 29,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'proteico'],
+    ingredients: [
+      { foodId: 'tofu', grams: 150 },{ foodId: 'tortilla_maiz', grams: 120 },{ foodId: 'zanahoria', grams: 170 },{ foodId: 'aceitunas', grams: 20 }
+    ],
+  },
+  {
+    id: 'extra-19',
+    name: 'Bowl de tempeh, arroz integral y alcachofa',
+    goal: 'cut',
+    meal: 'desayuno',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Alta saciedad por caloría: proteína magra, fibra de verdura y grasa en porción pequeña.',
+    minutes: 30,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'proteico'],
+    ingredients: [
+      { foodId: 'tempeh', grams: 165 },{ foodId: 'arroz_integral', grams: 140 },{ foodId: 'alcachofa', grams: 120 },{ foodId: 'aceite_oliva', grams: 10 }
+    ],
+  },
+  {
+    id: 'extra-20',
+    name: 'Ensalada de salmón con pimiento y patata',
+    goal: 'maintain',
+    meal: 'snack',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Reparte la proteína entre comidas y acompáñala de fibra y grasa insoluble para mantener la saciedad y la masa magra.',
+    minutes: 31,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'equilibrado'],
+    ingredients: [
+      { foodId: 'salmon', grams: 180 },{ foodId: 'patata', grams: 160 },{ foodId: 'pimiento', grams: 130 },{ foodId: 'aguacate', grams: 15 }
+    ],
+  },
+  {
+    id: 'extra-21',
+    name: 'Bowl de atún, tortilla de maíz y lechuga',
+    goal: 'bulk',
+    meal: 'comida',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Aporta densidad energética moderada y carbohidrato alrededor del entrenamiento para recuperar glucógeno sin exceso de grasa.',
+    minutes: 12,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'proteico'],
+    ingredients: [
+      { foodId: 'atun_fresco', grams: 120 },{ foodId: 'tortilla_maiz', grams: 100 },{ foodId: 'lechuga', grams: 140 },{ foodId: 'chia', grams: 20 }
+    ],
+  },
+  {
+    id: 'extra-22',
+    name: 'Bowl de merluza, arroz integral y espinaca',
+    goal: 'cut',
+    meal: 'cena',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Alta saciedad por caloría: proteína magra, fibra de verdura y grasa en porción pequeña.',
+    minutes: 13,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'proteico'],
+    ingredients: [
+      { foodId: 'merluza', grams: 135 },{ foodId: 'arroz_integral', grams: 120 },{ foodId: 'espinaca', grams: 150 },{ foodId: 'lino', grams: 10 }
+    ],
+  },
+  {
+    id: 'extra-23',
+    name: 'Bowl de gambas, patata y berenjena',
+    goal: 'maintain',
+    meal: 'desayuno',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Reparte la proteína entre comidas y acompáñala de fibra y grasa insoluble para mantener la saciedad y la masa magra.',
+    minutes: 14,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'equilibrado'],
+    ingredients: [
+      { foodId: 'gambas', grams: 150 },{ foodId: 'patata', grams: 140 },{ foodId: 'berenjena', grams: 160 },{ foodId: 'sesamo', grams: 15 }
+    ],
+  },
+  {
+    id: 'extra-24',
+    name: 'Ensalada de queso fresco con espárrago y tortilla de maíz',
+    goal: 'bulk',
+    meal: 'snack',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Aporta densidad energética moderada y carbohidrato alrededor del entrenamiento para recuperar glucógeno sin exceso de grasa.',
+    minutes: 15,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'proteico'],
+    ingredients: [
+      { foodId: 'queso_fresco', grams: 165 },{ foodId: 'tortilla_maiz', grams: 160 },{ foodId: 'esparrago', grams: 170 },{ foodId: 'aceitunas', grams: 20 }
+    ],
+  },
+  {
+    id: 'extra-25',
+    name: 'Bowl de yogur griego, arroz integral y pepino',
+    goal: 'cut',
+    meal: 'comida',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Alta saciedad por caloría: proteína magra, fibra de verdura y grasa en porción pequeña.',
+    minutes: 16,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'proteico'],
+    ingredients: [
+      { foodId: 'yogur_griego', grams: 180 },{ foodId: 'arroz_integral', grams: 100 },{ foodId: 'pepino', grams: 120 },{ foodId: 'aceite_oliva', grams: 10 }
+    ],
+  },
+  {
+    id: 'extra-26',
+    name: 'Bowl de suero, patata y coliflor',
+    goal: 'maintain',
+    meal: 'cena',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Reparte la proteína entre comidas y acompáñala de fibra y grasa insoluble para mantener la saciedad y la masa magra.',
+    minutes: 17,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'equilibrado'],
+    ingredients: [
+      { foodId: 'proteina_suero', grams: 120 },{ foodId: 'patata', grams: 120 },{ foodId: 'coliflor', grams: 130 },{ foodId: 'aguacate', grams: 15 }
+    ],
+  },
+  {
+    id: 'extra-27',
+    name: 'Bowl de pollo, tortilla de maíz y brócoli',
+    goal: 'bulk',
+    meal: 'desayuno',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Aporta densidad energética moderada y carbohidrato alrededor del entrenamiento para recuperar glucógeno sin exceso de grasa.',
+    minutes: 18,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'proteico'],
+    ingredients: [
+      { foodId: 'pollo_pechuga', grams: 135 },{ foodId: 'tortilla_maiz', grams: 140 },{ foodId: 'brocoli', grams: 140 },{ foodId: 'chia', grams: 20 }
+    ],
+  },
+  {
+    id: 'extra-28',
+    name: 'Ensalada de pavo con calabacín y arroz integral',
+    goal: 'cut',
+    meal: 'snack',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Alta saciedad por caloría: proteína magra, fibra de verdura y grasa en porción pequeña.',
+    minutes: 19,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'proteico'],
+    ingredients: [
+      { foodId: 'pavo_pechuga', grams: 150 },{ foodId: 'arroz_integral', grams: 160 },{ foodId: 'calabacin', grams: 150 },{ foodId: 'lino', grams: 10 }
+    ],
+  },
+  {
+    id: 'extra-29',
+    name: 'Bowl de ternera, patata y champiñón',
+    goal: 'maintain',
+    meal: 'comida',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Reparte la proteína entre comidas y acompáñala de fibra y grasa insoluble para mantener la saciedad y la masa magra.',
+    minutes: 20,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'equilibrado'],
+    ingredients: [
+      { foodId: 'ternera_solomillo', grams: 165 },{ foodId: 'patata', grams: 100 },{ foodId: 'champinon', grams: 160 },{ foodId: 'sesamo', grams: 15 }
+    ],
+  },
+  {
+    id: 'extra-30',
+    name: 'Bowl de huevo, tortilla de maíz y tomate',
+    goal: 'bulk',
+    meal: 'cena',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Aporta densidad energética moderada y carbohidrato alrededor del entrenamiento para recuperar glucógeno sin exceso de grasa.',
+    minutes: 21,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'proteico'],
+    ingredients: [
+      { foodId: 'huevo', grams: 180 },{ foodId: 'tortilla_maiz', grams: 120 },{ foodId: 'tomate', grams: 170 },{ foodId: 'aceitunas', grams: 20 }
+    ],
+  },
+  {
+    id: 'extra-31',
+    name: 'Bowl de tofu, arroz integral y zanahoria',
+    goal: 'cut',
+    meal: 'desayuno',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Alta saciedad por caloría: proteína magra, fibra de verdura y grasa en porción pequeña.',
+    minutes: 22,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'proteico'],
+    ingredients: [
+      { foodId: 'tofu', grams: 120 },{ foodId: 'arroz_integral', grams: 140 },{ foodId: 'zanahoria', grams: 120 },{ foodId: 'aceite_oliva', grams: 10 }
+    ],
+  },
+  {
+    id: 'extra-32',
+    name: 'Ensalada de tempeh con alcachofa y patata',
+    goal: 'maintain',
+    meal: 'snack',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Reparte la proteína entre comidas y acompáñala de fibra y grasa insoluble para mantener la saciedad y la masa magra.',
+    minutes: 23,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'equilibrado'],
+    ingredients: [
+      { foodId: 'tempeh', grams: 135 },{ foodId: 'patata', grams: 160 },{ foodId: 'alcachofa', grams: 130 },{ foodId: 'aguacate', grams: 15 }
+    ],
+  },
+  {
+    id: 'extra-33',
+    name: 'Bowl de salmón, tortilla de maíz y pimiento',
+    goal: 'bulk',
+    meal: 'comida',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Aporta densidad energética moderada y carbohidrato alrededor del entrenamiento para recuperar glucógeno sin exceso de grasa.',
+    minutes: 24,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'proteico'],
+    ingredients: [
+      { foodId: 'salmon', grams: 150 },{ foodId: 'tortilla_maiz', grams: 100 },{ foodId: 'pimiento', grams: 140 },{ foodId: 'chia', grams: 20 }
+    ],
+  },
+  {
+    id: 'extra-34',
+    name: 'Bowl de atún, arroz integral y lechuga',
+    goal: 'cut',
+    meal: 'cena',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Alta saciedad por caloría: proteína magra, fibra de verdura y grasa en porción pequeña.',
+    minutes: 25,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'proteico'],
+    ingredients: [
+      { foodId: 'atun_fresco', grams: 165 },{ foodId: 'arroz_integral', grams: 120 },{ foodId: 'lechuga', grams: 150 },{ foodId: 'lino', grams: 10 }
+    ],
+  },
+  {
+    id: 'extra-35',
+    name: 'Bowl de merluza, patata y espinaca',
+    goal: 'maintain',
+    meal: 'desayuno',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Reparte la proteína entre comidas y acompáñala de fibra y grasa insoluble para mantener la saciedad y la masa magra.',
+    minutes: 26,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'equilibrado'],
+    ingredients: [
+      { foodId: 'merluza', grams: 180 },{ foodId: 'patata', grams: 140 },{ foodId: 'espinaca', grams: 160 },{ foodId: 'sesamo', grams: 15 }
+    ],
+  },
+  {
+    id: 'extra-36',
+    name: 'Ensalada de gambas con berenjena y tortilla de maíz',
+    goal: 'bulk',
+    meal: 'snack',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Aporta densidad energética moderada y carbohidrato alrededor del entrenamiento para recuperar glucógeno sin exceso de grasa.',
+    minutes: 27,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'proteico'],
+    ingredients: [
+      { foodId: 'gambas', grams: 120 },{ foodId: 'tortilla_maiz', grams: 160 },{ foodId: 'berenjena', grams: 170 },{ foodId: 'aceitunas', grams: 20 }
+    ],
+  },
+  {
+    id: 'extra-37',
+    name: 'Bowl de queso fresco, arroz integral y espárrago',
+    goal: 'cut',
+    meal: 'comida',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Alta saciedad por caloría: proteína magra, fibra de verdura y grasa en porción pequeña.',
+    minutes: 28,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'proteico'],
+    ingredients: [
+      { foodId: 'queso_fresco', grams: 135 },{ foodId: 'arroz_integral', grams: 100 },{ foodId: 'esparrago', grams: 120 },{ foodId: 'aceite_oliva', grams: 10 }
+    ],
+  },
+  {
+    id: 'extra-38',
+    name: 'Bowl de yogur griego, patata y pepino',
+    goal: 'maintain',
+    meal: 'cena',
+    description: 'Combinación equilibrada de proteína, carbohidrato y verdura con grasa saludable.',
+    science: 'Reparte la proteína entre comidas y acompáñala de fibra y grasa insoluble para mantener la saciedad y la masa magra.',
+    minutes: 29,
+    servings: 1,
+    tags: ['sin gluten', 'sin frutos secos', 'equilibrado'],
+    ingredients: [
+      { foodId: 'yogur_griego', grams: 150 },{ foodId: 'patata', grams: 120 },{ foodId: 'pepino', grams: 130 },{ foodId: 'aguacate', grams: 15 }
     ],
   },
 ];
@@ -299,13 +871,13 @@ const RECIPE_EN: Record<string, RecipeTranslation> = {
     tags: ['omega-3', 'gluten free'],
   },
   'cut-yogurt-bowl': {
-    name: 'Greek yogurt with banana and walnuts',
+    name: 'Greek yogurt with banana and chia',
     description: 'Snack with protein, potassium and a small portion of healthy fat.',
-    science: 'Greek yogurt has twice the protein of regular yogurt; walnuts add fatty acids and fiber in a controlled portion.',
+    science: 'Greek yogurt has twice the protein of regular yogurt; chia adds fatty acids and fiber in a controlled portion.',
     tags: ['snack', 'protein'],
   },
   'maintain-pasta-tuna': {
-    name: 'Whole-wheat pasta with tuna and tomato',
+    name: 'Brown rice with tuna and tomato',
     description: 'Balanced dish with carbs, protein and lycopene.',
     science: 'Macro split close to 30/40/30: enough protein to maintain lean mass and carbs to replenish glycogen.',
     tags: ['balanced', 'budget'],
@@ -341,16 +913,244 @@ const RECIPE_EN: Record<string, RecipeTranslation> = {
     tags: ['high calorie', 'strength'],
   },
   'bulk-pasta-salmon': {
-    name: 'Pasta with salmon and parmesan',
+    name: 'Rice with salmon and fresh cheese',
     description: 'Energetic dinner with omega-3 and high-quality protein.',
     science: 'Pasta around training supports recovery; salmon provides anti-inflammatory fat and parmesan adds calcium and umami.',
     tags: ['omega-3', 'recovery'],
   },
   'bulk-eggs-toast': {
-    name: 'Eggs, whole-wheat toast and peanut butter',
+    name: 'Eggs, corn tortilla and avocado',
     description: 'Solid breakfast with protein, fat and carbs to start with energy.',
     science: 'Spread protein across 3–4 servings of 0.4 g/kg to stimulate protein synthesis throughout the day; this breakfast covers one.',
     tags: ['protein', 'quick'],
+  },
+  'extra-01': {
+    name: 'Bowl de chicken, brown rice and broccoli',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Alta saciedad por caloría: proteína magra, fibra de verdura and grasa en porción pequeña.',
+    tags: ['gluten free', 'nut free', 'protein'],
+  },
+  'extra-02': {
+    name: 'Bowl de turkey, potato and zucchini',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Reparte la proteína entre comidas and acompáñala de fibra and grasa insoluble para mantener la saciedad and la masa magra.',
+    tags: ['gluten free', 'nut free', 'balanced'],
+  },
+  'extra-03': {
+    name: 'Bowl de beef, corn tortilla and mushroom',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Aporta densidad energética moderada and carbohidrato alrededor del entrenamiento para recuperar glucógeno sin exceso de grasa.',
+    tags: ['gluten free', 'nut free', 'protein'],
+  },
+  'extra-04': {
+    name: 'Salad de egg with tomato and brown rice',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Alta saciedad por caloría: proteína magra, fibra de verdura and grasa en porción pequeña.',
+    tags: ['gluten free', 'nut free', 'protein'],
+  },
+  'extra-05': {
+    name: 'Bowl de tofu, potato and carrot',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Reparte la proteína entre comidas and acompáñala de fibra and grasa insoluble para mantener la saciedad and la masa magra.',
+    tags: ['gluten free', 'nut free', 'balanced'],
+  },
+  'extra-06': {
+    name: 'Bowl de tempeh, corn tortilla and artichoke',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Aporta densidad energética moderada and carbohidrato alrededor del entrenamiento para recuperar glucógeno sin exceso de grasa.',
+    tags: ['gluten free', 'nut free', 'protein'],
+  },
+  'extra-07': {
+    name: 'Bowl de salmon, brown rice and bell pepper',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Alta saciedad por caloría: proteína magra, fibra de verdura and grasa en porción pequeña.',
+    tags: ['gluten free', 'nut free', 'protein'],
+  },
+  'extra-08': {
+    name: 'Salad de tuna with lettuce and potato',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Reparte la proteína entre comidas and acompáñala de fibra and grasa insoluble para mantener la saciedad and la masa magra.',
+    tags: ['gluten free', 'nut free', 'balanced'],
+  },
+  'extra-09': {
+    name: 'Bowl de hake, corn tortilla and spinach',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Aporta densidad energética moderada and carbohidrato alrededor del entrenamiento para recuperar glucógeno sin exceso de grasa.',
+    tags: ['gluten free', 'nut free', 'protein'],
+  },
+  'extra-10': {
+    name: 'Bowl de shrimp, brown rice and eggplant',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Alta saciedad por caloría: proteína magra, fibra de verdura and grasa en porción pequeña.',
+    tags: ['gluten free', 'nut free', 'protein'],
+  },
+  'extra-11': {
+    name: 'Bowl de fresh cheese, potato and asparagus',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Reparte la proteína entre comidas and acompáñala de fibra and grasa insoluble para mantener la saciedad and la masa magra.',
+    tags: ['gluten free', 'nut free', 'balanced'],
+  },
+  'extra-12': {
+    name: 'Salad de greek yogurt with cucumber and corn tortilla',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Aporta densidad energética moderada and carbohidrato alrededor del entrenamiento para recuperar glucógeno sin exceso de grasa.',
+    tags: ['gluten free', 'nut free', 'protein'],
+  },
+  'extra-13': {
+    name: 'Bowl de whey, brown rice and cauliflower',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Alta saciedad por caloría: proteína magra, fibra de verdura and grasa en porción pequeña.',
+    tags: ['gluten free', 'nut free', 'protein'],
+  },
+  'extra-14': {
+    name: 'Bowl de chicken, potato and broccoli',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Reparte la proteína entre comidas and acompáñala de fibra and grasa insoluble para mantener la saciedad and la masa magra.',
+    tags: ['gluten free', 'nut free', 'balanced'],
+  },
+  'extra-15': {
+    name: 'Bowl de turkey, corn tortilla and zucchini',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Aporta densidad energética moderada and carbohidrato alrededor del entrenamiento para recuperar glucógeno sin exceso de grasa.',
+    tags: ['gluten free', 'nut free', 'protein'],
+  },
+  'extra-16': {
+    name: 'Salad de beef with mushroom and brown rice',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Alta saciedad por caloría: proteína magra, fibra de verdura and grasa en porción pequeña.',
+    tags: ['gluten free', 'nut free', 'protein'],
+  },
+  'extra-17': {
+    name: 'Bowl de egg, potato and tomato',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Reparte la proteína entre comidas and acompáñala de fibra and grasa insoluble para mantener la saciedad and la masa magra.',
+    tags: ['gluten free', 'nut free', 'balanced'],
+  },
+  'extra-18': {
+    name: 'Bowl de tofu, corn tortilla and carrot',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Aporta densidad energética moderada and carbohidrato alrededor del entrenamiento para recuperar glucógeno sin exceso de grasa.',
+    tags: ['gluten free', 'nut free', 'protein'],
+  },
+  'extra-19': {
+    name: 'Bowl de tempeh, brown rice and artichoke',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Alta saciedad por caloría: proteína magra, fibra de verdura and grasa en porción pequeña.',
+    tags: ['gluten free', 'nut free', 'protein'],
+  },
+  'extra-20': {
+    name: 'Salad de salmon with bell pepper and potato',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Reparte la proteína entre comidas and acompáñala de fibra and grasa insoluble para mantener la saciedad and la masa magra.',
+    tags: ['gluten free', 'nut free', 'balanced'],
+  },
+  'extra-21': {
+    name: 'Bowl de tuna, corn tortilla and lettuce',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Aporta densidad energética moderada and carbohidrato alrededor del entrenamiento para recuperar glucógeno sin exceso de grasa.',
+    tags: ['gluten free', 'nut free', 'protein'],
+  },
+  'extra-22': {
+    name: 'Bowl de hake, brown rice and spinach',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Alta saciedad por caloría: proteína magra, fibra de verdura and grasa en porción pequeña.',
+    tags: ['gluten free', 'nut free', 'protein'],
+  },
+  'extra-23': {
+    name: 'Bowl de shrimp, potato and eggplant',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Reparte la proteína entre comidas and acompáñala de fibra and grasa insoluble para mantener la saciedad and la masa magra.',
+    tags: ['gluten free', 'nut free', 'balanced'],
+  },
+  'extra-24': {
+    name: 'Salad de fresh cheese with asparagus and corn tortilla',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Aporta densidad energética moderada and carbohidrato alrededor del entrenamiento para recuperar glucógeno sin exceso de grasa.',
+    tags: ['gluten free', 'nut free', 'protein'],
+  },
+  'extra-25': {
+    name: 'Bowl de greek yogurt, brown rice and cucumber',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Alta saciedad por caloría: proteína magra, fibra de verdura and grasa en porción pequeña.',
+    tags: ['gluten free', 'nut free', 'protein'],
+  },
+  'extra-26': {
+    name: 'Bowl de whey, potato and cauliflower',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Reparte la proteína entre comidas and acompáñala de fibra and grasa insoluble para mantener la saciedad and la masa magra.',
+    tags: ['gluten free', 'nut free', 'balanced'],
+  },
+  'extra-27': {
+    name: 'Bowl de chicken, corn tortilla and broccoli',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Aporta densidad energética moderada and carbohidrato alrededor del entrenamiento para recuperar glucógeno sin exceso de grasa.',
+    tags: ['gluten free', 'nut free', 'protein'],
+  },
+  'extra-28': {
+    name: 'Salad de turkey with zucchini and brown rice',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Alta saciedad por caloría: proteína magra, fibra de verdura and grasa en porción pequeña.',
+    tags: ['gluten free', 'nut free', 'protein'],
+  },
+  'extra-29': {
+    name: 'Bowl de beef, potato and mushroom',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Reparte la proteína entre comidas and acompáñala de fibra and grasa insoluble para mantener la saciedad and la masa magra.',
+    tags: ['gluten free', 'nut free', 'balanced'],
+  },
+  'extra-30': {
+    name: 'Bowl de egg, corn tortilla and tomato',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Aporta densidad energética moderada and carbohidrato alrededor del entrenamiento para recuperar glucógeno sin exceso de grasa.',
+    tags: ['gluten free', 'nut free', 'protein'],
+  },
+  'extra-31': {
+    name: 'Bowl de tofu, brown rice and carrot',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Alta saciedad por caloría: proteína magra, fibra de verdura and grasa en porción pequeña.',
+    tags: ['gluten free', 'nut free', 'protein'],
+  },
+  'extra-32': {
+    name: 'Salad de tempeh with artichoke and potato',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Reparte la proteína entre comidas and acompáñala de fibra and grasa insoluble para mantener la saciedad and la masa magra.',
+    tags: ['gluten free', 'nut free', 'balanced'],
+  },
+  'extra-33': {
+    name: 'Bowl de salmon, corn tortilla and bell pepper',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Aporta densidad energética moderada and carbohidrato alrededor del entrenamiento para recuperar glucógeno sin exceso de grasa.',
+    tags: ['gluten free', 'nut free', 'protein'],
+  },
+  'extra-34': {
+    name: 'Bowl de tuna, brown rice and lettuce',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Alta saciedad por caloría: proteína magra, fibra de verdura and grasa en porción pequeña.',
+    tags: ['gluten free', 'nut free', 'protein'],
+  },
+  'extra-35': {
+    name: 'Bowl de hake, potato and spinach',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Reparte la proteína entre comidas and acompáñala de fibra and grasa insoluble para mantener la saciedad and la masa magra.',
+    tags: ['gluten free', 'nut free', 'balanced'],
+  },
+  'extra-36': {
+    name: 'Salad de shrimp with eggplant and corn tortilla',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Aporta densidad energética moderada and carbohidrato alrededor del entrenamiento para recuperar glucógeno sin exceso de grasa.',
+    tags: ['gluten free', 'nut free', 'protein'],
+  },
+  'extra-37': {
+    name: 'Bowl de fresh cheese, brown rice and asparagus',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Alta saciedad por caloría: proteína magra, fibra de verdura and grasa en porción pequeña.',
+    tags: ['gluten free', 'nut free', 'protein'],
+  },
+  'extra-38': {
+    name: 'Bowl de greek yogurt, potato and cucumber',
+    description: 'Balanced combination of protein, carbohydrate and vegetables with healthy fat.',
+    science: 'Reparte la proteína entre comidas and acompáñala de fibra and grasa insoluble para mantener la saciedad and la masa magra.',
+    tags: ['gluten free', 'nut free', 'balanced'],
   },
 };
 
@@ -416,15 +1216,19 @@ export function recommendRecipes(
   remaining?: Partial<RemainingMacros> | null,
   limit = 4,
   lang: Lang = 'es',
+  seed = 0,
 ): RecipeSuggestion[] {
-  return RECIPES.map((recipe) => {
+  const safe = RECIPES.filter((recipe) =>
+    recipe.ingredients.every((ingredient) => !isGlutenOrNut(ingredient.foodId)),
+  );
+  const ranked = safe.map((recipe) => {
     const macros = recipeMacros(recipe);
     let score = recipe.goal === goal ? 60 : 20;
     const proteinPerKg = macros.proteinPer100Kcal;
 
     if (goal === 'cut') {
-      score += Math.min(22, proteinPerKg * 11);
-      score += Math.min(8, macros.fiberPer100Kcal * 18);
+      score += proteinPerKg * 18;
+      score += Math.min(12, macros.fiberPer100Kcal * 26);
       if (macros.kcal > 750) score -= 10;
     } else if (goal === 'bulk') {
       score += Math.min(14, macros.kcal / 60);
@@ -449,8 +1253,17 @@ export function recommendRecipes(
     const fit: RecipeSuggestion['fit'] = score >= 82 ? 'excellent' : score >= 62 ? 'good' : 'ok';
     return { ...localizedRecipe(recipe, lang), macros, fit, score: Math.round(score) };
   })
-    .sort((a, b) => b.score - a.score)
-    .slice(0, Math.max(1, limit));
+    .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+  const poolSize = Math.min(12, ranked.length);
+  const start = poolSize ? seed % poolSize : 0;
+  return Array.from({ length: Math.min(Math.max(1, limit), poolSize) }, (_, index) =>
+    ranked[(start + index) % poolSize],
+  );
+}
+
+/** Ninguna receta recomendada contiene gluten ni frutos secos. */
+export function isGlutenOrNut(foodId: string): boolean {
+  return /^(pan|pasta|cuscus|bulgur|harina_trigo|tortilla_trigo|bagel|galleta|croissant|magdalena|seitan|almendra|nuez|avellana|pistacho|anacardo|cacahuete|crema_cacahuete|leche_almendra|muesli)/.test(foodId);
 }
 
 function newId(): string {

@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import pkg from '../package.json';
 import { barcodeVariants } from './foodDb';
-import type { AppInfo, BarcodeProduct, FoodCategory, VaultEvent } from './types';
+import type { AppInfo, BarcodeProduct, Food, FoodCategory, VaultEvent } from './types';
 
 export type { VaultEvent };
 
@@ -93,11 +93,6 @@ export async function getVaultInfo(): Promise<VaultInfo> {
     return { path, label: path, data_dir: path ? `${path}/omega` : null };
   }
   return invoke<VaultInfo>('get_vault_info');
-}
-
-export async function getVaultPath(): Promise<string | null> {
-  if (!isTauri()) return localStorage.getItem(MOCK_VAULT_KEY);
-  return invoke<string | null>('get_vault_path');
 }
 
 export async function selectVault(): Promise<VaultSelection> {
@@ -208,6 +203,70 @@ export async function lookupBarcode(code: string): Promise<BarcodeProduct | null
     return invoke<BarcodeProduct | null>('lookup_barcode', { code: barcode });
   }
   return lookupBarcodeWeb(barcode);
+}
+
+/**
+ * Búsqueda de alimentos por palabras clave. En la app nativa pasa por Rust
+ * (la CSP prohíbe `fetch` desde el webview); en modo navegador se llama
+ * directamente solo para poder probar el flujo.
+ */
+export async function searchFoodsRemote(query: string): Promise<Food[]> {
+  const clean = query
+    .trim()
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/[^\p{L}\p{N}\s\-_,¿?¡!.]/gu, '')
+    .replace(/\s+/g, ' ')
+    .slice(0, 80);
+  if (!clean || clean.length < 2 || /[\x00-\x1f]/.test(clean)) return [];
+  if (isTauri()) {
+    // Se propaga el fallo para que la UI distinga «sin resultados» de «sin red»;
+    // la búsqueda local sigue funcionando en cualquier caso.
+    return invoke<Food[]>('search_foods_remote', { query: clean });
+  }
+  try {
+    const url = new URL('https://world.openfoodfacts.org/cgi/search.pl');
+    url.searchParams.set('search_terms', clean);
+    url.searchParams.set('json', '1');
+    url.searchParams.set('page_size', '8');
+    url.searchParams.set('fields', 'code,product_name,product_name_es,generic_name,brands,nutriments,categories_tags,quantity,serving_size');
+    const response = await fetch(url.toString());
+    if (!response.ok) return [];
+    const payload = await response.json() as { products?: Array<Record<string, unknown>> };
+    return (payload.products ?? []).slice(0, 8).map(remoteFoodFromPayload).filter((f): f is Food => f !== null);
+  } catch {
+    return [];
+  }
+}
+
+function remoteFoodFromPayload(raw: Record<string, unknown>): Food | null {
+  const code = typeof raw.code === 'string' ? raw.code.replace(/\D/g, '') : '';
+  const name = typeof raw.product_name_es === 'string' && raw.product_name_es.trim()
+    ? raw.product_name_es.trim()
+    : typeof raw.product_name === 'string' ? raw.product_name.trim() : '';
+  if (!code || !name) return null;
+  const nutriments = (raw.nutriments ?? {}) as Record<string, unknown>;
+  const num = (key: string): number => {
+    const value = nutriments[key];
+    const n = typeof value === 'string' ? Number(value.replace(',', '.')) : typeof value === 'number' ? value : 0;
+    return Number.isFinite(n) && n >= 0 ? Math.round(n * 10) / 10 : 0;
+  };
+  const kcal = num('energy-kcal_100g') || num('energy_100g') / 4.184;
+  const protein = num('proteins_100g');
+  const carbs = num('carbohydrates_100g');
+  const fat = num('fat_100g');
+  if (kcal <= 0 && protein <= 0 && carbs <= 0 && fat <= 0) return null;
+  const brands = typeof raw.brands === 'string' ? raw.brands.trim() : '';
+  const tags = Array.isArray(raw.categories_tags) ? raw.categories_tags.filter((t): t is string => typeof t === 'string') : [];
+  return {
+    id: `off-${code}`,
+    name: brands && !name.toLowerCase().includes(brands.toLowerCase()) ? `${name} (${brands})` : name,
+    category: categoryFromTags(tags),
+    per100: { kcal: Math.round(kcal * 10) / 10, protein, carbs, fat, fiber: num('fiber_100g') },
+    units: {},
+    custom: true,
+    barcode: code,
+    source: 'openfoodfacts',
+  };
 }
 
 function categoryFromTags(tags: string[]): FoodCategory {

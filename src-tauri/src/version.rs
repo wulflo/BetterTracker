@@ -28,7 +28,7 @@ pub fn app_info() -> AppInfo {
 }
 
 /// Minimal SemVer comparison (major.minor.patch). Returns -1/0/1.
-/// Used by the (currently opt-in/future) update check; never string compare.
+/// Used by the signature check and the update manifest comparison; never string compare.
 pub fn compare_versions(a: &str, b: &str) -> i8 {
     let parse = |s: &str| -> (u64, u64, u64) {
         let core = s.split('-').next().unwrap_or(s).split('+').next().unwrap_or(s);

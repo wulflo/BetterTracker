@@ -65,10 +65,6 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_app_info,
-            commands::get_app_version,
-            commands::get_version_info,
-            commands::get_build_info,
-            commands::get_version,
             commands::frontend_ready,
             commands::open_external,
             commands::get_device_id,
@@ -80,12 +76,12 @@ pub fn run() {
             commands::download_android_apk,
             vault::select_vault,
             vault::get_vault_info,
-            vault::get_vault_path,
             vault::vault_backup_status,
             vault::vault_run_backup,
             vault::vault_restore_snapshot,
             vault::vault_delete_backups,
             barcode::lookup_barcode,
+            barcode::search_foods_remote,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

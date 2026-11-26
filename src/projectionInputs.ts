@@ -14,8 +14,11 @@ import {
   type TrainingSummary,
 } from './metrics';
 import { appendEvent, newEvent } from './vault';
+import { todayISO } from './metrics';
 
-export type ProjectionIntakeSource = 'manual' | 'logged' | 'target';
+export type ProjectionIntakeSource = 'manual' | 'auto' | 'logged' | 'target';
+export type IntakePriority = 'manual' | 'auto' | 'logged';
+const INTAKE_PRIORITY_KEY = 'bt.intake.priority';
 
 export interface ProjectionInputsController {
   frequencyPerWeek: number;
@@ -34,8 +37,70 @@ export interface ProjectionInputsController {
   loggedIntake: { avg: number; days: number };
   effectiveIntake: number;
   intakeSource: ProjectionIntakeSource;
+  intakePriority: IntakePriority;
+  setIntakePriority: (value: IntakePriority) => void;
+  autoIntake: AutoIntake;
+  saveAutoIntake: (entry: { kcal: number; protein: number; carbs: number; fat: number; fiber: number }, forceEnabled?: boolean, date?: string) => Promise<void>;
   training: TrainingEstimate;
   stepActivity: number | null;
+}
+
+export interface AutoIntakeEntry {
+  date: string;
+  enabled: boolean;
+  kcal: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  fiber: number;
+}
+
+export interface AutoIntake {
+  days: number;
+  avg: number;
+  enabledToday: boolean;
+}
+
+/** Días con registro automático en los últimos 30 y media de kcal. */
+/** Últimos registros `intake.auto` (un evento por día, el más reciente manda). */
+export function autoIntakeEntries(events: VaultEvent[], today = new Date()): AutoIntakeEntry[] {
+  const byDate = new Map<string, AutoIntakeEntry>();
+  for (const event of events) {
+    if (event.kind !== 'intake.auto') continue;
+    const raw = event.payload as Partial<AutoIntakeEntry> | null;
+    if (!raw?.date) continue;
+    byDate.set(raw.date, {
+      date: raw.date,
+      enabled: raw.enabled !== false,
+      kcal: Number.isFinite(raw.kcal) ? Math.max(0, Math.round(Number(raw.kcal))) : 0,
+      protein: Number.isFinite(raw.protein) ? Math.max(0, Number(raw.protein)) : 0,
+      carbs: Number.isFinite(raw.carbs) ? Math.max(0, Number(raw.carbs)) : 0,
+      fat: Number.isFinite(raw.fat) ? Math.max(0, Number(raw.fat)) : 0,
+      fiber: Number.isFinite(raw.fiber) ? Math.max(0, Number(raw.fiber)) : 0,
+    });
+  }
+  const cutoff = new Date(today.getTime() - 29 * 86_400_000);
+  const cutoffKey = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, '0')}-${String(cutoff.getDate()).padStart(2, '0')}`;
+  return [...byDate.values()].filter((entry) => entry.date >= cutoffKey).sort((a, b) => b.date.localeCompare(a.date));
+}
+
+export function autoIntakeSummary(events: VaultEvent[], today = new Date()): AutoIntake {
+  const byDate = new Map<string, { enabled: boolean; kcal: number }>();
+  for (const event of events) {
+    if (event.kind !== 'intake.auto') continue;
+    const raw = event.payload as { date?: string; enabled?: boolean; kcal?: number } | null;
+    if (!raw?.date) continue;
+    byDate.set(raw.date, {
+      enabled: raw.enabled !== false,
+      kcal: Number.isFinite(raw.kcal) ? Math.max(0, Number(raw.kcal)) : 0,
+    });
+  }
+  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const cutoff = new Date(today.getTime() - 29 * 86_400_000);
+  const cutoffKey = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, '0')}-${String(cutoff.getDate()).padStart(2, '0')}`;
+  const active = [...byDate.entries()].filter(([date, value]) => value.enabled && value.kcal > 0 && date >= cutoffKey && date <= todayKey);
+  const avg = active.length ? active.reduce((sum, [, value]) => sum + value.kcal, 0) / active.length : 0;
+  return { days: active.length, avg: round1(avg), enabledToday: byDate.get(todayKey)?.enabled === true };
 }
 
 interface Options {
@@ -98,6 +163,14 @@ export function useProjectionInputs({
     () => [...events].reverse().find((event) => event.kind === 'intake.average')?.id,
     [events],
   );
+  const [intakePriority, setIntakePriorityState] = useState<IntakePriority>(() => {
+    const raw = localStorage.getItem(INTAKE_PRIORITY_KEY);
+    return raw === 'auto' || raw === 'logged' ? raw : 'manual';
+  });
+  const setIntakePriority = (value: IntakePriority) => {
+    setIntakePriorityState(value);
+    localStorage.setItem(INTAKE_PRIORITY_KEY, value);
+  };
   const [intakeKcal, setIntakeKcalState] = useState(() => averageIntakeFromEvents(events));
   useEffect(() => {
     setIntakeKcalState(averageIntakeFromEvents(events));
@@ -110,10 +183,43 @@ export function useProjectionInputs({
   );
   const stepActivity = stepActivityMultiplier(steps);
 
-  const effectiveIntake =
-    intakeKcal > 0 ? intakeKcal : loggedIntake.days >= 3 ? loggedIntake.avg : 0;
-  const intakeSource: ProjectionIntakeSource =
-    intakeKcal > 0 ? 'manual' : loggedIntake.days >= 3 ? 'logged' : 'target';
+  const autoIntake = useMemo(() => autoIntakeSummary(events), [events]);
+  const available: Array<{ source: ProjectionIntakeSource; kcal: number }> = [
+    ...(intakeKcal > 0 ? [{ source: 'manual' as const, kcal: intakeKcal }] : []),
+    ...(autoIntake.days >= 5 ? [{ source: 'auto' as const, kcal: autoIntake.avg }] : []),
+    ...(loggedIntake.days >= 3 ? [{ source: 'logged' as const, kcal: loggedIntake.avg }] : []),
+  ];
+  const ordered = [...available].sort((a, b) => {
+    const rank = (source: ProjectionIntakeSource) =>
+      source === intakePriority ? 0 : source === 'manual' ? 1 : source === 'auto' ? 2 : 3;
+    return rank(a.source) - rank(b.source);
+  });
+  const effectiveIntake = ordered.length ? ordered[0].kcal : 0;
+  const intakeSource: ProjectionIntakeSource = ordered.length ? ordered[0].source : 'target';
+
+  const saveAutoIntake = async (
+    entry: { kcal: number; protein: number; carbs: number; fat: number; fiber: number },
+    forceEnabled?: boolean,
+    date?: string,
+  ) => {
+    const enabled = forceEnabled ?? !autoIntake.enabledToday;
+    await appendEvent(newEvent(deviceId, 'intake.auto', {
+      date: date ?? todayISO(),
+      enabled,
+      kcal: Math.max(0, Math.round(entry.kcal)),
+      protein: Math.max(0, round1(entry.protein)),
+      carbs: Math.max(0, round1(entry.carbs)),
+      fat: Math.max(0, round1(entry.fat)),
+      fiber: Math.max(0, round1(entry.fiber)),
+    }));
+    await onRefresh();
+    notify(
+      enabled
+        ? tx(lang, 'Ingesta de hoy guardada automáticamente.', "Today's intake saved automatically.")
+        : tx(lang, 'Registro automático desactivado.', 'Automatic logging disabled.'),
+      'info',
+    );
+  };
 
   const setFrequencyPerWeek = (value: number) => {
     setFrequencyPerWeekState(Math.max(0, value));
@@ -166,6 +272,10 @@ export function useProjectionInputs({
   };
 
   return {
+    autoIntake,
+    intakePriority,
+    setIntakePriority,
+    saveAutoIntake,
     frequencyPerWeek,
     frequencyUnit,
     hasFrequency,

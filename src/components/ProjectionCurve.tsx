@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import type { Lang } from '../i18n';
 import { tx } from '../i18n';
 import type { ProjectionTrajectoryPoint } from '../bodyRange';

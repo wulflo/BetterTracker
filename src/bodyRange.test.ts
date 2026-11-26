@@ -94,7 +94,6 @@ describe('rangos corporales seguros', () => {
   });
 
   it('usa los pasos medios para ajustar el gasto y las fechas futuras', () => {
-    const low = projectBody(BODY, 'cut', 0, 'sedentary', MUSCULAR, 'es', 12, 3000);
     const high = projectBody(BODY, 'cut', 0, 'sedentary', MUSCULAR, 'es', 12, 12000);
     expect(high.note).toContain('12000 pasos/día');
     expect(high.milestones).toHaveLength(4);
@@ -245,11 +244,48 @@ describe('rangos corporales seguros', () => {
       expect(milestone.weightHigh).toBeGreaterThanOrEqual(milestone.weight);
       expect(milestone.dateLow <= milestone.date).toBe(true);
       expect(milestone.dateHigh >= milestone.date).toBe(true);
+      // Los escenarios que no alcanzan el hito se cuentan aparte, no se
+      // disfrazan como llegadas al horizonte máximo.
+      expect(milestone.unreachedScenarios).toBeGreaterThanOrEqual(0);
+      expect(milestone.unreachedScenarios).toBeLessThanOrEqual(81);
     }
   });
 
+  it('modula la partición por edad con la misma ingesta', () => {
+    const common = {
+      goal: 'cut' as const,
+      weeklyMinutes: 180,
+      activity: 'moderate' as const,
+      comp: MUSCULAR,
+      lang: 'es' as const,
+      strengthPerMonth: 12,
+      steps: 0,
+      options: { avgIntakeKcal: 1900, intakeSource: 'manual' as const },
+    };
+    const younger = projectBody({ ...BODY, age: 30 }, common.goal, common.weeklyMinutes, common.activity, common.comp, common.lang, common.strengthPerMonth, common.steps, common.options);
+    const older = projectBody({ ...BODY, age: 75 }, common.goal, common.weeklyMinutes, common.activity, common.comp, common.lang, common.strengthPerMonth, common.steps, common.options);
+    // Con la misma grasa inicial, la persona mayor conserva menos masa magra
+    // en la simulación (factor de sarcopenia documentado).
+    const last = (p: typeof younger) =>
+      p.trajectory.length
+        ? p.trajectory[p.trajectory.length - 1]
+        : { leanMass: 0, fatMass: 0 };
+    // El déficit total es menor en la persona mayor (BMR más bajo), pero una
+    // proporción mayor de lo que pierde es masa magra.
+    const leanShare = (p: typeof younger) => {
+      const end = last(p);
+      const leanLoss = Math.max(0, 75.6 - end.leanMass);
+      const fatLoss = Math.max(0, 14.4 - end.fatMass);
+      return leanLoss / Math.max(0.001, leanLoss + fatLoss);
+    };
+    expect(leanShare(older)).toBeGreaterThan(leanShare(younger));
+    expect(younger.dailyBreakdown.bmr).not.toBe(older.dailyBreakdown.bmr);
+  });
+
   it('expresa proyecciones largas en años', () => {
-    expect(formatProjectionDuration(5, 'es')).toBe('5 semana(s)');
+    expect(formatProjectionDuration(5, 'es')).toBe('5 semanas');
+    expect(formatProjectionDuration(1, 'es')).toBe('1 semana');
+    expect(formatProjectionDuration(5, 'en')).toBe('5 weeks');
     expect(formatProjectionDuration(20, 'es')).toBe('5 meses');
     expect(formatProjectionDuration(130, 'es')).toBe('2,5 años');
     expect(formatProjectionDuration(130, 'en')).toBe('2.5 years');

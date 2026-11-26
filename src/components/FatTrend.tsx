@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { VaultEvent } from '../types';
 import { bodyProgressSeries, formatShort } from '../metrics';
 import { Icon } from './Icons';

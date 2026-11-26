@@ -7,12 +7,12 @@ const STORAGE_KEY = 'bt.lang';
 const DICT: Record<Lang, Record<string, string>> = {
   es: {
     'app.subtitle': 'Entrena local, entiende tu cuerpo',
-    'nav.panel': 'Panel',
+    'nav.panel': 'Alimentación',
     'nav.training': 'Entrenamiento',
     'nav.history': 'Historial',
     'nav.body': 'Figura corporal',
     'nav.wellness': 'Hábitos',
-    'nav.mobile.panel': 'Panel',
+    'nav.mobile.panel': 'Comida',
     'nav.mobile.training': 'Entreno',
     'nav.mobile.history': 'Historial',
     'nav.mobile.body': 'Cuerpo',
@@ -22,12 +22,12 @@ const DICT: Record<Lang, Record<string, string>> = {
   },
   en: {
     'app.subtitle': 'Train locally, understand your body',
-    'nav.panel': 'Dashboard',
+    'nav.panel': 'Nutrition',
     'nav.training': 'Training',
     'nav.history': 'History',
     'nav.body': 'Body',
     'nav.wellness': 'Habits',
-    'nav.mobile.panel': 'Dashboard',
+    'nav.mobile.panel': 'Food',
     'nav.mobile.training': 'Train',
     'nav.mobile.history': 'History',
     'nav.mobile.body': 'Body',
@@ -55,7 +55,7 @@ export function locale(lang: Lang): string {
 }
 
 /** Plural sencillo para contadores de interfaz. */
-export function plural(lang: Lang, n: number, one: string, many: string): string {
+export function plural(_lang: Lang, n: number, one: string, many: string): string {
   return n === 1 ? one : many;
 }
 

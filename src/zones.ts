@@ -221,10 +221,6 @@ export function exerciseTypeLabel(type: string, lang: Lang = 'es'): string {
   return option?.label ?? type;
 }
 
-export const ZONE_OPTIONS = zoneOptions('es');
-
-export const TYPE_OPTIONS = typeOptions('es');
-
 const KEYWORDS: Array<[ZoneId, string[]]> = [
   ['chest', ['pecho', 'pectoral', 'serrato', 'press banca', 'flexion']],
   ['back', ['espalda', 'dorsal', 'remo', 'jalon', 'dominada', 'trapecio', 'romboide', 'peso muerto']],

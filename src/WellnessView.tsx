@@ -1,10 +1,13 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import type { Habit, HabitFrequency, MoodScore, VaultEvent } from './types';
+import { dayNames } from './dates';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { Habit, HabitFrequency, HabitKind, MoodScore, Reminder, VaultEvent } from './types';
 import { appendEvent, newEvent } from './vault';
 import {
   autoSummary,
   defaultHabits,
   habitDone,
+  habitSucceeded,
+  habitSignedPoints,
   habitScheduleLabel,
   isHabitDue,
   reduceHabitLogs,
@@ -18,7 +21,7 @@ import { Stat } from './components/Fields';
 import Select from './components/Select';
 import { Icon } from './components/Icons';
 import { ProgressBar } from './components/Charts';
-import { formatShort, todayISO } from './metrics';
+import { formatShort, reduceReminders, todayISO } from './metrics';
 import { tx, useLanguage } from './i18n';
 
 interface Props {
@@ -27,9 +30,6 @@ interface Props {
   onRefresh: () => Promise<void>;
   notify: (message: string, tone?: 'success' | 'error' | 'info') => void;
 }
-
-const DAY_NAMES_ES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
-const DAY_NAMES_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 interface HabitForm {
   id: string | null;
@@ -40,6 +40,7 @@ interface HabitForm {
   timesPerWeek: number;
   dayOfMonth: number;
   points: number;
+  kind: HabitKind;
 }
 
 const EMPTY_FORM: HabitForm = {
@@ -51,6 +52,7 @@ const EMPTY_FORM: HabitForm = {
   timesPerWeek: 3,
   dayOfMonth: 1,
   points: 10,
+  kind: 'good',
 };
 
 export default function WellnessView({ deviceId, events, onRefresh, notify }: Props) {
@@ -58,7 +60,13 @@ export default function WellnessView({ deviceId, events, onRefresh, notify }: Pr
   const digest = useMemo(() => wellnessDigest(events, new Date(), lang), [events, lang]);
   const logs = useMemo(() => reduceHabitLogs(events), [events]);
   const [form, setForm] = useState<HabitForm>(EMPTY_FORM);
+  const [remTitle, setRemTitle] = useState('');
+  const [remTime, setRemTime] = useState('18:00');
+  const [remDays, setRemDays] = useState<number[]>([1, 3, 5]);
+  const firedRef = useRef<Set<string>>(new Set());
+  const reminders = useMemo(() => reduceReminders(events), [events]);
   const [busy, setBusy] = useState(false);
+  const [habitFilter, setHabitFilter] = useState<'todos' | 'fuertes' | 'riesgos'>('todos');
   const [mood, setMood] = useState<MoodScore>(digest.moodToday?.mood ?? 4);
   const [moodNote, setMoodNote] = useState(digest.moodToday?.note ?? '');
   const [summary, setSummary] = useState(digest.moodToday?.summary ?? '');
@@ -104,6 +112,7 @@ export default function WellnessView({ deviceId, events, onRefresh, notify }: Pr
       timesPerWeek: habit.timesPerWeek,
       dayOfMonth: habit.dayOfMonth,
       points: habit.points,
+      kind: habit.kind ?? 'good',
     });
   };
 
@@ -132,6 +141,7 @@ export default function WellnessView({ deviceId, events, onRefresh, notify }: Pr
         timesPerWeek: form.frequency === 'weekly' && form.days.length === 0 ? form.timesPerWeek : form.days.length || 1,
         dayOfMonth: form.dayOfMonth,
         points: Math.max(1, Math.round(form.points)),
+      kind: form.kind,
         enabled: true,
         createdAt,
       };
@@ -218,6 +228,70 @@ export default function WellnessView({ deviceId, events, onRefresh, notify }: Pr
   const faces = moodFaces(lang);
   const moodLabel = faces.find((face) => face.value === digest.moodToday?.mood)?.label;
 
+  const toggleRemDay = (d: number) => {
+    setRemDays((days) => (days.includes(d) ? days.filter((x) => x !== d) : [...days, d].sort()));
+  };
+
+  const saveReminder = async () => {
+    if (!remTitle.trim()) {
+      notify(tx(lang, 'Escribe un título para el recordatorio.', 'Enter a title for the reminder.'), 'error');
+      return;
+    }
+    const r: Reminder = {
+      id: crypto.randomUUID(),
+      title: remTitle.trim(),
+      time: remTime,
+      days: remDays.length ? remDays : [1, 2, 3, 4, 5, 6, 0],
+      enabled: true,
+    };
+    await appendEvent(newEvent(deviceId, 'reminder.saved', r));
+    setRemTitle('');
+    await onRefresh();
+    notify(tx(lang, 'Recordatorio guardado.', 'Reminder saved.'), 'success');
+    if ('Notification' in window && Notification.permission === 'default') {
+      void Notification.requestPermission();
+    }
+  };
+
+  const deleteReminder = async (id: string) => {
+    await appendEvent(newEvent(deviceId, 'reminder.deleted', { id }));
+    await onRefresh();
+  };
+
+  useEffect(() => {
+    const check = () => {
+      const now = new Date();
+      const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      const key = `${todayISO(now)}-${hhmm}`;
+      for (const r of reminders) {
+        if (!r.enabled || r.time !== hhmm || !r.days.includes(now.getDay())) continue;
+        const fired = `${r.id}-${key}`;
+        if (firedRef.current.has(fired)) continue;
+        firedRef.current.add(fired);
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification('Better Fitness Tracker', { body: r.title });
+        }
+        notify(tx(lang, `Recordatorio: ${r.title}`, `Reminder: ${r.title}`), 'info');
+      }
+    };
+    const id = window.setInterval(check, 30_000);
+    check();
+    return () => window.clearInterval(id);
+  }, [reminders, notify, lang]);
+
+  const onHabitTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    const ids: Array<typeof habitFilter> = ['todos', 'fuertes', 'riesgos'];
+    const index = ids.indexOf(habitFilter);
+    let next = index;
+    if (event.key === 'ArrowRight') next = (index + 1) % ids.length;
+    else if (event.key === 'ArrowLeft') next = (index - 1 + ids.length) % ids.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = ids.length - 1;
+    else return;
+    event.preventDefault();
+    setHabitFilter(ids[next]);
+  };
+
   return (
     <div className="page">
       <header className="page-header">
@@ -261,6 +335,19 @@ export default function WellnessView({ deviceId, events, onRefresh, notify }: Pr
         />
       </div>
 
+      <div className="row wrap">
+        <span className="badge badge-primary">{tx(lang, `Fuertes: ${digest.counts.strong}`, `Strong: ${digest.counts.strong}`)}</span>
+        <span className="badge badge-warning">{tx(lang, `Adicciones: ${digest.counts.addictive}`, `Addictions: ${digest.counts.addictive}`)}</span>
+        <span className="badge badge-error">{tx(lang, `Hábitos malos: ${digest.counts.bad}`, `Bad habits: ${digest.counts.bad}`)}</span>
+        <span className="badge badge-muted">{tx(lang, `Puntos +${digest.pointsPositive} / ${digest.pointsNegative}`, `Points +${digest.pointsPositive} / ${digest.pointsNegative}`)}</span>
+      </div>
+      <div className="tabs" role="tablist" aria-label={tx(lang, 'Clasificación de hábitos', 'Habit classification')}>
+        {([['todos', tx(lang, 'Todos', 'All')], ['fuertes', tx(lang, 'Hábitos fuertes', 'Strong habits')], ['riesgos', tx(lang, 'Adicciones y malos', 'Addictions & bad')]] as Array<['todos' | 'fuertes' | 'riesgos', string]>).map(([id, label]) => (
+          <button key={id} type="button" role="tab" aria-selected={habitFilter === id} tabIndex={habitFilter === id ? 0 : -1}
+            className={`tab ${habitFilter === id ? 'active' : ''}`} onClick={() => setHabitFilter(id)} onKeyDown={onHabitTabKeyDown}>{label}</button>
+        ))}
+      </div>
+
       <div className="grid grid-2">
         <section className="card span-2">
           <div className="card-header">
@@ -293,10 +380,14 @@ export default function WellnessView({ deviceId, events, onRefresh, notify }: Pr
               </div>
             ) : (
               <div className="list">
-                {digest.habits.map((habit) => {
+                {digest.habits.filter((habit) =>
+                  habitFilter === 'todos' ||
+                  (habitFilter === 'fuertes' && (habit.kind ?? 'good') === 'strong') ||
+                  (habitFilter === 'riesgos' && ((habit.kind ?? 'good') === 'addictive' || habit.kind === 'bad'))
+                ).map((habit) => {
                   const due = isHabitDue(habit, today);
-                  const done = habitDone(habit, logs, today);
-                  const weekDone = digest.week.filter((day) => habitDone(habit, logs, day.date)).length;
+                  const done = habitSucceeded(habit, logs, today);
+                  const weekDone = digest.week.filter((day) => habitSucceeded(habit, logs, day.date)).length;
                   return (
                     <div key={habit.id} className={`habit-row ${done ? 'habit-done' : ''} ${!habit.enabled ? 'habit-off' : ''}`}>
                       <button
@@ -315,7 +406,7 @@ export default function WellnessView({ deviceId, events, onRefresh, notify }: Pr
                           {due && !done && <span className="badge badge-primary">{tx(lang, 'Hoy', 'Today')}</span>}
                         </div>
                         <div className="habit-sub">
-                          {habitScheduleLabel(habit, lang)} · {habit.points} pts
+                          {habitScheduleLabel(habit, lang)} · {habitSignedPoints(habit, habit.points)} pts
                           {habit.frequency !== 'daily' && tx(lang, ` · ${weekDone}/${weeklyTarget(habit)} esta semana`, ` · ${weekDone}/${weeklyTarget(habit)} this week`)}
                         </div>
                         {habit.note && <div className="hint small">{habit.note}</div>}
@@ -364,6 +455,19 @@ export default function WellnessView({ deviceId, events, onRefresh, notify }: Pr
                   />
                 </label>
                 <label className="field">
+                  <span className="field-label">{tx(lang, 'Tipo de hábito', 'Habit kind')}</span>
+                  <Select
+                    value={form.kind}
+                    onChange={(value) => updateForm('kind', value as HabitKind)}
+                    options={[
+                      { value: 'good', label: tx(lang, 'Saludable', 'Healthy') },
+                      { value: 'strong', label: tx(lang, 'Hábito fuerte', 'Strong habit') },
+                      { value: 'addictive', label: tx(lang, 'Adicción', 'Addiction') },
+                      { value: 'bad', label: tx(lang, 'Hábito malo', 'Bad habit') },
+                    ]}
+                  />
+                </label>
+                <label className="field">
                   <span className="field-label">{tx(lang, 'Frecuencia', 'Frequency')}</span>
                   <Select
                     value={form.frequency}
@@ -392,7 +496,7 @@ export default function WellnessView({ deviceId, events, onRefresh, notify }: Pr
                 <div className="stack-sm">
                   <span className="field-label">{tx(lang, 'Días de la semana (opcional)', 'Days of the week (optional)')}</span>
                   <div className="chips">
-                    {(lang === 'en' ? DAY_NAMES_EN : DAY_NAMES_ES).map((day, index) => (
+                    {dayNames(lang).map((day, index) => (
                       <button
                         key={day}
                         type="button"
@@ -572,6 +676,46 @@ export default function WellnessView({ deviceId, events, onRefresh, notify }: Pr
           </div>
         </section>
       </div>
+
+      <section className="card">
+        <div className="card-header">
+          <div>
+            <div className="card-title"><Icon name="clock" /> {tx(lang, 'Recordatorios', 'Reminders')}</div>
+            <div className="card-sub">{tx(lang, 'Avisos mientras la app esté abierta; se guardan en tu bóveda.', 'Alerts while the app is open; stored in your vault.')}</div>
+          </div>
+        </div>
+        <div className="card-body stack">
+          <div className="field-row">
+            <label className="field">
+              <span className="field-label">{tx(lang, 'Título', 'Title')}</span>
+              <input className="input" value={remTitle} onChange={(e) => setRemTitle(e.target.value)} />
+            </label>
+            <label className="field">
+              <span className="field-label">{tx(lang, 'Hora', 'Time')}</span>
+              <input className="input" type="time" value={remTime} onChange={(e) => setRemTime(e.target.value)} />
+            </label>
+          </div>
+          <div className="row wrap">
+            {dayNames(lang).map((label, d) => (
+              <button key={d} type="button" className={`chip ${remDays.includes(d) ? 'active' : ''}`} onClick={() => toggleRemDay(d)}>{label}</button>
+            ))}
+          </div>
+          <button className="btn btn-primary" onClick={() => void saveReminder()}><Icon name="plus" size={15} /> {tx(lang, 'Guardar recordatorio', 'Save reminder')}</button>
+          {reminders.length > 0 && (
+            <div className="list">
+              {reminders.map((r) => (
+                <div key={r.id} className="list-item">
+                  <div className="list-item-main">
+                    <span className="list-item-title">{r.title}</span>
+                    <span className="list-item-sub">{r.time} · {r.days.map((d) => dayNames(lang)[d]).join(', ')}</span>
+                  </div>
+                  <button className="btn-icon" aria-label={tx(lang, `Borrar ${r.title}`, `Delete ${r.title}`)} onClick={() => void deleteReminder(r.id)}><Icon name="trash" size={14} /></button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
 
       <p className="hint">
         {tx(

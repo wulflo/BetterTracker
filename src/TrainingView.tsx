@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { dayNames } from './dates';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type {
   Exercise,
   Mesocycle,
@@ -42,11 +43,12 @@ import {
   type ZoneId,
 } from './zones';
 import Select from './components/Select';
-import { NumberInput, Field, EmptyState, Stat } from './components/Fields';
+import { NumberInput, Field, EmptyState } from './components/Fields';
 import RestTimer, { primeTimerAlarm, timerAlarm } from './components/RestTimer';
 import { Icon } from './components/Icons';
 import { BarChart, BodyHeatmap, CalendarHeatmap, LineChart, ProgressBar } from './components/Charts';
 import { tx, useLanguage } from './i18n';
+import { isExerciseVideoUrl, openExternal } from './links';
 
 interface Props {
   deviceId: string;
@@ -66,13 +68,6 @@ const TABS: Array<[Tab, string, string]> = [
   ['calendar', 'Calendario', 'Calendar'],
   ['progress', 'Progreso', 'Progress'],
 ];
-
-const DAY_NAMES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
-const DAY_NAMES_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-function dayNames(lang: 'es' | 'en'): string[] {
-  return lang === 'en' ? DAY_NAMES_EN : DAY_NAMES;
-}
 
 interface LiveEntry {
   exerciseId: string;
@@ -175,8 +170,12 @@ function LibraryTab({
   const [zone, setZone] = useState<ZoneId>('chest');
   const [type, setType] = useState('fuerza');
   const [search, setSearch] = useState('');
+  const [description, setDescription] = useState('');
+  const [videoUrl, setVideoUrl] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editVideoUrl, setEditVideoUrl] = useState('');
   const selectedZone = ZONE_MAP[zone];
   const zoneSummary = useMemo(() => trainingSummary(events, exercises), [events, exercises]);
 
@@ -185,12 +184,26 @@ function LibraryTab({
       notify(tx(lang, 'Escribe el nombre del ejercicio.', 'Enter the exercise name.'), 'error');
       return;
     }
+    const link = videoUrl.trim();
+    if (link && !isExerciseVideoUrl(link)) {
+      notify(
+        tx(
+          lang,
+          'El vídeo debe ser un enlace HTTPS de YouTube o Vimeo.',
+          'The video must be an HTTPS link from YouTube or Vimeo.',
+        ),
+        'error',
+      );
+      return;
+    }
     const ex: Exercise = {
       id: crypto.randomUUID(),
       name: name.trim(),
       zone,
       type,
       muscle: selectedZone.muscles.join(', '),
+      description: description.trim() || undefined,
+      videoUrl: link || undefined,
     };
     try {
       await appendEvent(newEvent(deviceId, 'exercise.upsert', ex));
@@ -202,6 +215,8 @@ function LibraryTab({
       return;
     }
     setName('');
+    setDescription('');
+    setVideoUrl('');
     await onRefresh();
     notify(tx(lang, 'Ejercicio añadido.', 'Exercise added.'), 'success');
   };
@@ -209,11 +224,15 @@ function LibraryTab({
   const cancelRename = () => {
     setEditingId(null);
     setEditName('');
+    setEditDescription('');
+    setEditVideoUrl('');
   };
 
   const startRename = (exercise: Exercise) => {
     setEditingId(exercise.id);
     setEditName(exercise.name);
+    setEditDescription(exercise.description ?? '');
+    setEditVideoUrl(exercise.videoUrl ?? '');
   };
 
   const rename = async () => {
@@ -226,19 +245,36 @@ function LibraryTab({
       notify(tx(lang, 'El nombre del ejercicio no puede estar vacío.', 'The exercise name cannot be empty.'), 'error');
       return;
     }
-    const updated: Exercise = { ...current, name: editName.trim() };
+    const link = editVideoUrl.trim();
+    if (link && !isExerciseVideoUrl(link)) {
+      notify(
+        tx(
+          lang,
+          'El vídeo debe ser un enlace HTTPS de YouTube o Vimeo.',
+          'The video must be an HTTPS link from YouTube or Vimeo.',
+        ),
+        'error',
+      );
+      return;
+    }
+    const updated: Exercise = {
+      ...current,
+      name: editName.trim(),
+      description: editDescription.trim() || undefined,
+      videoUrl: link || undefined,
+    };
     try {
       await appendEvent(newEvent(deviceId, 'exercise.upsert', updated));
     } catch (e) {
       notify(
-        tx(lang, `No se pudo renombrar el ejercicio: ${errorText(e)}`, `Could not rename the exercise: ${errorText(e)}`),
+        tx(lang, `No se pudo guardar el ejercicio: ${errorText(e)}`, `Could not save the exercise: ${errorText(e)}`),
         'error',
       );
       return;
     }
     cancelRename();
     await onRefresh();
-    notify(tx(lang, 'Ejercicio renombrado.', 'Exercise renamed.'), 'success');
+    notify(tx(lang, 'Ejercicio actualizado.', 'Exercise updated.'), 'success');
   };
 
   const del = async (id: string) => {
@@ -259,7 +295,12 @@ function LibraryTab({
   const filtered = exercises.filter((ex) => {
     if (!search.trim()) return true;
     const t = search.toLowerCase();
-    return ex.name.toLowerCase().includes(t) || zoneForExercise(ex).includes(t) || (ex.muscle ?? '').toLowerCase().includes(t);
+    return (
+      ex.name.toLowerCase().includes(t) ||
+      zoneForExercise(ex).includes(t) ||
+      (ex.muscle ?? '').toLowerCase().includes(t) ||
+      (ex.description ?? '').toLowerCase().includes(t)
+    );
   });
 
   const usage = (id: string) =>
@@ -308,6 +349,32 @@ function LibraryTab({
               )}
             </span>
           </div>
+          <Field
+            label={tx(lang, 'Descripción (opcional)', 'Description (optional)')}
+            hint={tx(lang, 'Cómo hacerlo, recomendaciones, errores comunes…', 'How to do it, tips, common mistakes…')}
+          >
+            <textarea
+              className="input textarea"
+              value={description}
+              maxLength={2000}
+              rows={3}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder={tx(lang, 'Ej.: agarre neutro, escápula fija, 3×8-10…', 'E.g.: neutral grip, fixed scapula, 3×8-10…')}
+            />
+          </Field>
+          <Field
+            label={tx(lang, 'Vídeo explicativo (opcional)', 'Explainer video (optional)')}
+            hint={tx(lang, 'Solo enlaces HTTPS de YouTube o Vimeo.', 'Only HTTPS links from YouTube or Vimeo.')}
+          >
+            <input
+              className="input"
+              type="url"
+              value={videoUrl}
+              maxLength={500}
+              onChange={(e) => setVideoUrl(e.target.value)}
+              placeholder="https://www.youtube.com/watch?v=..."
+            />
+          </Field>
           <button className="btn btn-primary" onClick={save}><Icon name="plus" size={15} /> {tx(lang, 'Añadir a la biblioteca', 'Add to library')}</button>
         </div>
       </section>
@@ -329,7 +396,7 @@ function LibraryTab({
           </span>
         </div>
         <div className="card-body stack">
-          <input className="input" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={tx(lang, 'Buscar por nombre, zona o músculo...', 'Search by name, zone or muscle...')} />
+          <input className="input" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={tx(lang, 'Buscar por nombre, zona, músculo o descripción...', 'Search by name, zone, muscle or description...')} />
           {filtered.length === 0 ? (
             <EmptyState
               icon={<Icon name="dumbbell" />}
@@ -345,24 +412,54 @@ function LibraryTab({
                   <div key={ex.id} className="list-item">
                     <div className="list-item-main" style={{ flex: 1 }}>
                       {editingId === ex.id ? (
-                        <input
-                          className="input input-sm"
-                          value={editName}
-                          onChange={(e) => setEditName(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') void rename();
-                            else if (e.key === 'Escape') cancelRename();
-                          }}
-                          aria-label={tx(lang, 'Nuevo nombre del ejercicio', 'New exercise name')}
-                          autoFocus
-                        />
+                        <div className="stack" style={{ gap: 8 }}>
+                          <input
+                            className="input input-sm"
+                            value={editName}
+                            onChange={(e) => setEditName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') void rename();
+                              else if (e.key === 'Escape') cancelRename();
+                            }}
+                            aria-label={tx(lang, 'Nuevo nombre del ejercicio', 'New exercise name')}
+                            autoFocus
+                          />
+                          <textarea
+                            className="input textarea"
+                            value={editDescription}
+                            maxLength={2000}
+                            rows={2}
+                            onChange={(e) => setEditDescription(e.target.value)}
+                            aria-label={tx(lang, 'Descripción del ejercicio', 'Exercise description')}
+                          />
+                          <input
+                            className="input input-sm"
+                            type="url"
+                            value={editVideoUrl}
+                            maxLength={500}
+                            onChange={(e) => setEditVideoUrl(e.target.value)}
+                            aria-label={tx(lang, 'Vídeo del ejercicio', 'Exercise video')}
+                            placeholder="https://www.youtube.com/watch?v=..."
+                          />
+                        </div>
                       ) : (
-                        <span className="list-item-title">{ex.name}</span>
+                        <>
+                          <span className="list-item-title">{ex.name}</span>
+                          <span className="list-item-sub">
+                            {zoneNameOf(z, lang)} · {exerciseTypeLabel(ex.type, lang)} ·{' '}
+                            {tx(lang, `${uses} uso(s)`, `${uses} ${uses === 1 ? 'use' : 'uses'}`)}
+                          </span>
+                          {ex.description && <div className="hint small">{ex.description}</div>}
+                          {ex.videoUrl && (
+                            <button
+                              className="btn btn-ghost btn-sm"
+                              onClick={() => void openExternal(ex.videoUrl as string).catch((e) => notify(errorText(e), 'error'))}
+                            >
+                              <Icon name="info" size={12} /> {tx(lang, 'Ver vídeo', 'Watch video')}
+                            </button>
+                          )}
+                        </>
                       )}
-                      <span className="list-item-sub">
-                        {zoneNameOf(z, lang)} · {exerciseTypeLabel(ex.type, lang)} ·{' '}
-                        {tx(lang, `${uses} uso(s)`, `${uses} ${uses === 1 ? 'use' : 'uses'}`)}
-                      </span>
                     </div>
                     <div className="list-item-meta">
                       <span className="chip" style={{ borderColor: `${z.color}55` }}>
@@ -371,12 +468,12 @@ function LibraryTab({
                       </span>
                       {editingId === ex.id ? (
                         <>
-                          <button className="btn-icon" aria-label={tx(lang, 'Guardar nombre', 'Save name')} onClick={() => void rename()}><Icon name="check" size={14} /></button>
+                          <button className="btn-icon" aria-label={tx(lang, 'Guardar ejercicio', 'Save exercise')} onClick={() => void rename()}><Icon name="check" size={14} /></button>
                           <button className="btn-icon" aria-label={tx(lang, 'Cancelar', 'Cancel')} onClick={cancelRename}><Icon name="close" size={14} /></button>
                         </>
                       ) : (
                         <>
-                          <button className="btn-icon" aria-label={tx(lang, `Renombrar ${ex.name}`, `Rename ${ex.name}`)} onClick={() => startRename(ex)}><Icon name="edit" size={14} /></button>
+                          <button className="btn-icon" aria-label={tx(lang, `Editar ${ex.name}`, `Edit ${ex.name}`)} onClick={() => startRename(ex)}><Icon name="edit" size={14} /></button>
                           <button className="btn-icon" aria-label={tx(lang, `Eliminar ${ex.name}`, `Delete ${ex.name}`)} onClick={() => void del(ex.id)}><Icon name="trash" size={14} /></button>
                         </>
                       )}
@@ -1038,7 +1135,6 @@ function SessionTab({
   const restWasActive = useRef(false);
   const restSuppressAlarm = useRef(false);
   const [addEx, setAddEx] = useState('');
-  const restRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!startedAt) return;

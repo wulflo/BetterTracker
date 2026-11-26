@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import Select from './components/Select';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type {
   ActivityLevel,
   BodyMeasures,
@@ -6,10 +7,7 @@ import type {
   Food,
   FoodLogItem,
   GoalMode,
-  MeasurementEntry,
   NutritionEntry,
-  Reminder,
-  Sex,
   VaultEvent,
 } from './types';
 import { EMPTY_MEASURES } from './types';
@@ -22,35 +20,21 @@ import {
   computeSatiety,
   computeWaterGuidance,
   fmtDuration,
-  formatProjectionDate,
   goalModeFromEvents,
   latestMeasurement,
   latestNutrition,
-  minutesLabel,
-  reduceReminders,
   reduceWeights,
   todayISO,
-  trainingAlerts,
   trainingSummary,
 } from './metrics';
-import {
-  classifyValue,
-  formatProjectionDuration,
-  projectBody,
-  safeBmiRange,
-  safeBodyFatRange,
-} from './bodyRange';
 import { useProjectionInputs } from './projectionInputs';
-import { goalLabel, recipeLogItems, recommendRecipes } from './recipes';
+import { ALLERGEN_LABELS, allergensFor, goalLabel, recipeLogItems, recommendRecipes, type AllergenId } from './recipes';
 import { FOODS, mealGrams, mealTotals, reduceCustomFoods } from './foodDb';
 import { clearMealDraft, loadMealDraft, saveMealDraft } from './meals';
-import { zoneName } from './zones';
 import { NumberInput, Field, EmptyState, Stat } from './components/Fields';
-import Select from './components/Select';
 import { Icon } from './components/Icons';
-import { BodyHeatmap, MiniSparkline, ProgressBar } from './components/Charts';
+import { ProgressBar } from './components/Charts';
 import FoodLog from './components/FoodLog';
-import FatTrend from './components/FatTrend';
 import { useLanguage, tx, locale } from './i18n';
 import { mealSlotLabel } from './foodDb';
 
@@ -60,23 +44,14 @@ interface Props {
   exercises: Exercise[];
   onRefresh: () => Promise<void>;
   notify: (message: string, tone?: 'success' | 'error' | 'info') => void;
-  onNavigate: (view: 'training' | 'history' | 'body') => void;
 }
 
-const DAY_NAMES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
-const DAY_NAMES_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-function dayNames(lang: 'es' | 'en'): string[] {
-  return lang === 'en' ? DAY_NAMES_EN : DAY_NAMES;
-}
-
-type PanelTab = 'summary' | 'body' | 'nutrition' | 'reminders';
+type PanelTab = 'ingesta' | 'agua' | 'recetas';
 
 const PANEL_TABS: Array<[PanelTab, string, string]> = [
-  ['summary', 'Resumen', 'Summary'],
-  ['body', 'Cuerpo', 'Body'],
-  ['nutrition', 'Nutrición', 'Nutrition'],
-  ['reminders', 'Recordatorios', 'Reminders'],
+  ['ingesta', 'Ingesta', 'Intake'],
+  ['agua', 'Agua', 'Water'],
+  ['recetas', 'Recetas', 'Recipes'],
 ];
 
 function emptyNutrition(date: string): NutritionEntry {
@@ -87,24 +62,10 @@ function emptyMacros(date: string): Pick<NutritionEntry, 'date' | 'kcal' | 'prot
   return { date, kcal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 };
 }
 
-export default function PanelView({ deviceId, events, exercises, onRefresh, notify, onNavigate }: Props) {
+export default function PanelView({ deviceId, events, exercises, onRefresh, notify }: Props) {
   const { lang } = useLanguage();
-  const [tab, setTab] = useState<PanelTab>('summary');
+  const [tab, setTab] = useState<PanelTab>('ingesta');
   const lastMeas = latestMeasurement(events);
-  const lastMeasEventId = [...events].reverse().find((e) => e.kind === 'measurement.saved')?.id;
-  const [measForm, setMeasForm] = useState<MeasurementEntry>({
-    ...EMPTY_MEASURES,
-    ...(lastMeas ?? {}),
-    date: lastMeas?.date ?? todayISO(),
-  });
-  useEffect(() => {
-    if (!lastMeasEventId) return;
-    const latest = latestMeasurement(events);
-    if (latest) setMeasForm({ ...EMPTY_MEASURES, ...latest, date: latest.date });
-  }, [lastMeasEventId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const [weightDate, setWeightDate] = useState(todayISO());
-  const [weightKg, setWeightKg] = useState(0);
   const [day, setDay] = useState(() => todayISO());
   const [mealItems, setMealItems] = useState<FoodLogItem[]>(() => loadMealDraft(todayISO()));
   const [nutri, setNutri] = useState<NutritionEntry>(() => emptyNutrition(todayISO()));
@@ -112,11 +73,15 @@ export default function PanelView({ deviceId, events, exercises, onRefresh, noti
   const [goalMode, setGoalMode] = useState<GoalMode>(() => goalModeFromEvents(events));
   const [activity, setActivity] = useState<ActivityLevel>(() => activityLevelFromEvents(events));
   const [waterBusy, setWaterBusy] = useState(false);
+  const [recipeSeed, setRecipeSeed] = useState(0);
+  const [userAllergens, setUserAllergens] = useState<AllergenId[]>(() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem('bt.allergens') ?? '[]');
+      return Array.isArray(raw) ? raw.filter((id): id is AllergenId => id in ALLERGEN_LABELS) : [];
+    } catch { return []; }
+  });
   const waterSaving = useRef(false);
-  const [remTitle, setRemTitle] = useState('');
-  const [remTime, setRemTime] = useState('18:00');
-  const [remDays, setRemDays] = useState<number[]>([1, 3, 5]);
-  const firedRef = useRef<Set<string>>(new Set());
+  const autoWriteRef = useRef('');
 
   // La bóveda se carga de forma asíncrona al abrir la app. Sin este efecto,
   // el modo elegido se quedaba en "mantener" hasta el siguiente clic.
@@ -135,11 +100,20 @@ export default function PanelView({ deviceId, events, exercises, onRefresh, noti
     summary: exerciseSummary,
     lang,
   });
+  const { autoIntake, saveAutoIntake, intakeSource, intakePriority, setIntakePriority } = projectionInputs;
+  useEffect(() => {
+    if (!autoIntake.enabledToday) return;
+    const key = `${day}:${nutri.kcal}:${nutri.protein}:${nutri.carbs}:${nutri.fat}:${nutri.fiber}`;
+    if (autoWriteRef.current === key) return;
+    autoWriteRef.current = key;
+    void saveAutoIntake(
+      { kcal: nutri.kcal, protein: nutri.protein, carbs: nutri.carbs, fat: nutri.fat, fiber: nutri.fiber },
+      true,
+    );
+  }, [nutri, day, autoIntake.enabledToday]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const training = projectionInputs.training;
   const steps = projectionInputs.steps;
-  const zoneLoad = exerciseSummary.zoneLoad;
-  const alerts = useMemo(() => trainingAlerts(exerciseSummary, new Date(), lang), [exerciseSummary, lang]);
-  const reminders = useMemo(() => reduceReminders(events), [events]);
   const customFoods = useMemo(() => reduceCustomFoods(events), [events]);
   const foods = useMemo(() => [...FOODS, ...customFoods], [customFoods]);
   const savedToday = useMemo(() => latestNutrition(events, day), [events, day]);
@@ -151,42 +125,11 @@ export default function PanelView({ deviceId, events, exercises, onRefresh, noti
     ...(lastMeas ?? {}),
     weight: currentWeight || lastMeas?.weight || 0,
   };
-  const macros = computeMacros(baseMeasures, training.weeklyMinutes, goalMode, activity, lang, steps);
+  const macros = computeMacros(baseMeasures, training.weeklyMinutes, goalMode, activity, lang, steps, {
+    summary: exerciseSummary,
+    declaredPerWeek: training.effectivePerWeek,
+  });
   const comp = bodyComposition(baseMeasures, lang);
-  const projection = useMemo(
-    () =>
-      projectBody(
-        baseMeasures,
-        goalMode,
-        training.weeklyMinutes,
-        activity,
-        comp,
-        lang,
-        training.strengthPerMonth,
-        steps,
-        {
-          avgIntakeKcal: projectionInputs.effectiveIntake,
-          intakeSource:
-            projectionInputs.intakeSource === 'logged' ? 'logged' : 'manual',
-        },
-      ),
-    [
-      baseMeasures,
-      goalMode,
-      training.weeklyMinutes,
-      training.strengthPerMonth,
-      activity,
-      comp,
-      lang,
-      steps,
-      projectionInputs.effectiveIntake,
-      projectionInputs.intakeSource,
-    ],
-  );
-  const bmiRange = safeBmiRange(baseMeasures.age, lang);
-  const fatRange = safeBodyFatRange(baseMeasures.sex, baseMeasures.age, lang);
-  const bmiStatus = classifyValue(comp.bmi, bmiRange, lang);
-  const bmi = comp.bmi;
   const fatAvg = comp.avg;
   const draftGrams = mealGrams(mealItems);
   const satiety = computeSatiety(nutri, macros, {
@@ -202,34 +145,6 @@ export default function PanelView({ deviceId, events, exercises, onRefresh, noti
   const waterSafeMax = waterGuidance.safeMaxMl;
   const waterPct = waterTarget > 0 ? Math.round((waterCurrent / waterTarget) * 100) : 0;
   const waterOver = waterGuidance.status === 'excess' || waterGuidance.status === 'danger';
-
-  const changeMeas = <K extends keyof MeasurementEntry>(key: K, value: MeasurementEntry[K]) => {
-    setMeasForm((f) => ({ ...f, [key]: value }));
-  };
-  const changeBody = <K extends keyof BodyMeasures>(key: K, value: BodyMeasures[K]) => {
-    setMeasForm((f) => ({ ...f, [key]: value }));
-  };
-
-  const saveWeight = async () => {
-    if (weightKg < 20 || weightKg > 400) {
-      notify(tx(lang, 'Introduce un peso entre 20 y 400 kg.', 'Enter a weight between 20 and 400 kg.'), 'error');
-      return;
-    }
-    await appendEvent(newEvent(deviceId, 'weight.logged', { date: weightDate, kg: weightKg }));
-    setWeightKg(0);
-    await onRefresh();
-    notify(tx(lang, 'Peso registrado.', 'Weight logged.'), 'success');
-  };
-
-  const saveMeasurements = async () => {
-    if (measForm.weight < 0 || measForm.height < 0) {
-      notify(tx(lang, 'Las medidas no pueden ser negativas.', 'Measurements cannot be negative.'), 'error');
-      return;
-    }
-    await appendEvent(newEvent(deviceId, 'measurement.saved', { ...measForm }));
-    await onRefresh();
-    notify(tx(lang, 'Medidas guardadas.', 'Measurements saved.'), 'success');
-  };
 
   const saveNutrition = async () => {
     if (nutri.kcal < 0 || nutri.protein < 0 || nutri.carbs < 0 || nutri.fat < 0 || nutri.fiber < 0 || nutri.water < 0) {
@@ -295,6 +210,26 @@ export default function PanelView({ deviceId, events, exercises, onRefresh, noti
     setNutri((current) => ({ ...current, ...patch, date: day }));
   };
 
+  const toggleUserAllergen = (id: AllergenId) => {
+    setUserAllergens((current) => {
+      const next = current.includes(id) ? current.filter((item) => item !== id) : [...current, id];
+      localStorage.setItem('bt.allergens', JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const onPanelTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    const index = PANEL_TABS.findIndex(([id]) => id === tab);
+    let next = index;
+    if (event.key === 'ArrowRight') next = (index + 1) % PANEL_TABS.length;
+    else if (event.key === 'ArrowLeft') next = (index - 1 + PANEL_TABS.length) % PANEL_TABS.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = PANEL_TABS.length - 1;
+    else return;
+    event.preventDefault();
+    setTab(PANEL_TABS[next][0]);
+  };
+
   const changeGoal = async (mode: GoalMode) => {
     setGoalMode(mode);
     await appendEvent(newEvent(deviceId, 'goal.mode', { mode }));
@@ -309,7 +244,7 @@ export default function PanelView({ deviceId, events, exercises, onRefresh, noti
         fat: Math.max(0, macros.fat - (Number(nutri.fat) || 0)),
       }
     : null;
-  const recipeSuggestions = recommendRecipes(goalMode, remainingMacros, 3, lang);
+  const recipeSuggestions = recommendRecipes(goalMode, remainingMacros, 3, lang, recipeSeed);
 
   const addRecipe = (recipe: (typeof recipeSuggestions)[number]) => {
     const items = recipeLogItems(recipe);
@@ -363,64 +298,6 @@ export default function PanelView({ deviceId, events, exercises, onRefresh, noti
     }
   };
 
-  const toggleRemDay = (d: number) => {
-    setRemDays((days) => (days.includes(d) ? days.filter((x) => x !== d) : [...days, d].sort()));
-  };
-
-  const saveReminder = async () => {
-    if (!remTitle.trim()) {
-      notify(tx(lang, 'Escribe un título para el recordatorio.', 'Enter a title for the reminder.'), 'error');
-      return;
-    }
-    const r: Reminder = {
-      id: crypto.randomUUID(),
-      title: remTitle.trim(),
-      time: remTime,
-      days: remDays.length ? remDays : [1, 2, 3, 4, 5, 6, 0],
-      enabled: true,
-    };
-    await appendEvent(newEvent(deviceId, 'reminder.saved', r));
-    setRemTitle('');
-    await onRefresh();
-    notify(
-      tx(
-        lang,
-        'Recordatorio guardado. Se avisará mientras la app esté abierta.',
-        'Reminder saved. It will alert while the app is open.',
-      ),
-      'success',
-    );
-    if ('Notification' in window && Notification.permission === 'default') {
-      void Notification.requestPermission();
-    }
-  };
-
-  const deleteReminder = async (id: string) => {
-    await appendEvent(newEvent(deviceId, 'reminder.deleted', { id }));
-    await onRefresh();
-  };
-
-  useEffect(() => {
-    const check = () => {
-      const now = new Date();
-      const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-      const key = `${todayISO(now)}-${hhmm}`;
-      for (const r of reminders) {
-        if (!r.enabled || r.time !== hhmm || !r.days.includes(now.getDay())) continue;
-        const fired = `${r.id}-${key}`;
-        if (firedRef.current.has(fired)) continue;
-        firedRef.current.add(fired);
-        if ('Notification' in window && Notification.permission === 'granted') {
-          new Notification('Better Fitness Tracker', { body: r.title });
-        }
-        notify(tx(lang, `Recordatorio: ${r.title}`, `Reminder: ${r.title}`), 'info');
-      }
-    };
-    const id = window.setInterval(check, 30_000);
-    check();
-    return () => window.clearInterval(id);
-  }, [reminders, notify, lang]);
-
   useEffect(() => {
     if (dirtyNutrition.current) return;
     if (mealItems.length > 0) return;
@@ -458,18 +335,17 @@ export default function PanelView({ deviceId, events, exercises, onRefresh, noti
   }, [day]);
 
   const hasNutrition = mealItems.length > 0 || nutri.kcal > 0 || nutri.protein > 0 || nutri.carbs > 0 || nutri.fat > 0 || nutri.fiber > 0 || nutri.water > 0;
-  const topZone = exerciseSummary.topZone;
 
   return (
     <div className="page">
       <header className="page-header">
         <div>
-          <h1 className="page-title">{tx(lang, 'Panel', 'Dashboard')}</h1>
+          <h1 className="page-title">{tx(lang, 'Alimentación', 'Nutrition')}</h1>
           <p className="page-sub">
             {tx(
               lang,
-              'Resumen diario, composición corporal, nutrición y recordatorios en una sola sección.',
-              'Daily summary, body composition, nutrition and reminders in one place.',
+              'Ingesta, agua y recetas: todo lo que comes y bebes en un solo lugar.',
+              'Intake, water and recipes: everything you eat and drink in one place.',
             )}
           </p>
         </div>
@@ -483,57 +359,17 @@ export default function PanelView({ deviceId, events, exercises, onRefresh, noti
 
       <div className="tabs" role="tablist" aria-label={tx(lang, 'Secciones del panel', 'Dashboard sections')}>
         {PANEL_TABS.map(([id, es, en]) => (
-          <button key={id} type="button" role="tab" aria-selected={tab === id} className={`tab ${tab === id ? 'active' : ''}`} onClick={() => setTab(id)}>
+          <button key={id} type="button" role="tab" aria-selected={tab === id} tabIndex={tab === id ? 0 : -1}
+            className={`tab ${tab === id ? 'active' : ''}`} onClick={() => setTab(id)} onKeyDown={onPanelTabKeyDown}>
             {tx(lang, es, en)}
           </button>
         ))}
       </div>
 
-      {tab === 'summary' && (
-        <div className="grid grid-4">
-          <Stat
-            label={tx(lang, 'Peso actual', 'Current weight')}
-            value={currentWeight ? `${currentWeight.toFixed(1)} kg` : '—'}
-            caption={
-              weights.length
-                ? tx(lang, `Último registro ${weights[weights.length - 1].date}`, `Last entry ${weights[weights.length - 1].date}`)
-                : tx(lang, 'Regístralo en la pestaña Cuerpo', 'Log it in the Body tab')
-            }
-          />
-          <Stat
-            label={tx(lang, 'IMC', 'BMI')}
-            value={bmi ? bmi.toFixed(1) : '—'}
-            caption={
-              bmi
-                ? bmi < 18.5
-                  ? tx(lang, 'Bajo peso', 'Underweight')
-                  : bmi < 25
-                    ? tx(lang, 'Rango normal', 'Normal range')
-                    : bmi < 30
-                      ? tx(lang, 'Sobrepeso', 'Overweight')
-                      : tx(lang, 'Obesidad', 'Obesity')
-                : tx(lang, 'Faltan peso y altura', 'Weight and height required')
-            }
-          />
-          <Stat
-            label={tx(lang, '% grasa estimado', 'Estimated body fat %')}
-            value={fatAvg !== null ? `${fatAvg.toFixed(1)}%` : '—'}
-            caption={
-              comp.methods.length
-                ? tx(lang, `${comp.methods.length} método(s) disponibles`, `${comp.methods.length} method(s) available`)
-                : tx(lang, 'Añade cintura, cuello o edad', 'Add waist, neck or age')
-            }
-          />
-          <Stat
-            label={tx(lang, 'Sesiones esta semana', 'Sessions this week')}
-            value={exerciseSummary.weekSessions}
-            caption={`${minutesLabel(exerciseSummary.weekMinutes)} · ${tx(lang, `${exerciseSummary.weekSets} series`, `${exerciseSummary.weekSets} sets`)}`}
-          />
-        </div>
-      )}
 
       <div className="grid grid-2">
-        {tab === 'summary' && (
+        {tab === 'agua' && (
+        <>
           <section
             className={`card water-banner span-2 ${waterOver ? 'water-banner-over' : ''}`}
           aria-label={tx(lang, 'Control de agua', 'Water tracking')}
@@ -631,273 +467,55 @@ export default function PanelView({ deviceId, events, exercises, onRefresh, noti
                 </div>
               </div>
             </div>
-          </div>
-        </section>
-        )}
-
-        {tab === 'body' && (
-        <>
-        <section className="card span-2">
-          <div className="card-header">
-            <div>
-              <div className="card-title"><Icon name="scale" /> {tx(lang, 'Peso y composición', 'Weight and composition')}</div>
-              <div className="card-sub">
-                {tx(
-                  lang,
-                  'Registra el peso rápido y, cuando puedas, añade medidas. Más datos = mejor estimación.',
-                  'Log weight quickly and, when you can, add measurements. More data = better estimates.',
-                )}
-              </div>
-            </div>
-            <div className="badge badge-muted">
-              {lastMeas
-                ? tx(lang, `Última medida ${lastMeas.date}`, `Last measurement ${lastMeas.date}`)
-                : tx(lang, 'Sin medidas', 'No measurements')}
-            </div>
-          </div>
-          <div className="card-body stack">
-            <div className="row wrap" style={{ alignItems: 'flex-end' }}>
-              <div className="field" style={{ minWidth: 150 }}>
-                <span className="field-label">{tx(lang, 'Fecha de peso', 'Weight date')}</span>
-                <input className="input" type="date" value={weightDate} onChange={(e) => setWeightDate(e.target.value)} />
-              </div>
-              <div className="field" style={{ minWidth: 120 }}>
-                <span className="field-label">{tx(lang, 'Peso (kg)', 'Weight (kg)')}</span>
-                <NumberInput value={weightKg} onChange={setWeightKg} placeholder="75.0" min={20} max={400} step={0.1} />
-              </div>
-              <button className="btn btn-primary" onClick={saveWeight}>
-                <Icon name="plus" size={15} /> {tx(lang, 'Registrar peso', 'Log weight')}
-              </button>
-              {weights.length > 1 && (
-                <div style={{ marginLeft: 'auto', minWidth: 160 }}>
-                  <MiniSparkline values={weights.slice(-14).map((w) => w.kg)} />
-                </div>
-              )}
-            </div>
-
-            <div className="divider" />
-
-            <div className="grid grid-4">
-              <Field label={tx(lang, 'Fecha', 'Date')}><input className="input" type="date" value={measForm.date} onChange={(e) => changeMeas('date', e.target.value)} /></Field>
-              <Field label={tx(lang, 'Sexo', 'Sex')}>
-                <Select
-                  value={measForm.sex}
-                  onChange={(v) => changeBody('sex', v as Sex)}
-                  options={[
-                    { value: 'unspecified', label: tx(lang, 'Sin especificar', 'Unspecified') },
-                    { value: 'male', label: tx(lang, 'Hombre', 'Male') },
-                    { value: 'female', label: tx(lang, 'Mujer', 'Female') },
-                  ]}
-                />
-              </Field>
-              <Field label={tx(lang, 'Edad', 'Age')}><NumberInput value={measForm.age} onChange={(v) => changeBody('age', v)} placeholder="30" min={10} max={100} /></Field>
-              <Field label={tx(lang, 'Altura (cm)', 'Height (cm)')}><NumberInput value={measForm.height} onChange={(v) => changeBody('height', v)} placeholder="175" min={100} max={230} /></Field>
-              <Field label={tx(lang, 'Peso composición (kg)', 'Composition weight (kg)')}><NumberInput value={measForm.weight} onChange={(v) => changeBody('weight', v)} placeholder="75" min={20} max={400} step={0.1} /></Field>
-              <Field label={tx(lang, 'Cuello (cm)', 'Neck (cm)')}><NumberInput value={measForm.neck} onChange={(v) => changeBody('neck', v)} placeholder="38" min={20} max={70} /></Field>
-              <Field label={tx(lang, 'Cintura (cm)', 'Waist (cm)')}><NumberInput value={measForm.waist} onChange={(v) => changeBody('waist', v)} placeholder="85" min={40} max={180} /></Field>
-              <Field label={tx(lang, 'Abdomen ombligo (cm)', 'Navel abdomen (cm)')}><NumberInput value={measForm.abdomen} onChange={(v) => changeBody('abdomen', v)} placeholder="85" min={40} max={180} /></Field>
-              <Field label={tx(lang, 'Cadera (cm)', 'Hip (cm)')}><NumberInput value={measForm.hip} onChange={(v) => changeBody('hip', v)} placeholder="95" min={40} max={180} /></Field>
-            </div>
-
-            <details className="details">
-              <summary>{tx(lang, 'Más medidas para la figura corporal', 'More measurements for the body figure')}</summary>
-              <div className="grid grid-4" style={{ marginTop: 12 }}>
-                <Field label={tx(lang, 'Pecho (cm)', 'Chest (cm)')}><NumberInput value={measForm.chest} onChange={(v) => changeBody('chest', v)} placeholder="100" /></Field>
-                <Field label={tx(lang, 'Brazo (cm)', 'Arm (cm)')}><NumberInput value={measForm.arm} onChange={(v) => changeBody('arm', v)} placeholder="32" /></Field>
-                <Field label={tx(lang, 'Antebrazo (cm)', 'Forearm (cm)')}><NumberInput value={measForm.forearm} onChange={(v) => changeBody('forearm', v)} placeholder="25" /></Field>
-                <Field label={tx(lang, 'Muslo (cm)', 'Thigh (cm)')}><NumberInput value={measForm.thigh} onChange={(v) => changeBody('thigh', v)} placeholder="55" /></Field>
-                <Field label={tx(lang, 'Pantorrilla (cm)', 'Calf (cm)')}><NumberInput value={measForm.calf} onChange={(v) => changeBody('calf', v)} placeholder="38" /></Field>
-                <Field label={tx(lang, 'Muñeca (cm)', 'Wrist (cm)')}><NumberInput value={measForm.wrist} onChange={(v) => changeBody('wrist', v)} placeholder="17" /></Field>
-              </div>
-            </details>
-
-            <div className="row between wrap">
-              <div className="row wrap">
-                <span className="badge badge-muted">{tx(lang, 'IMC', 'BMI')} {comp.bmi ? comp.bmi.toFixed(1) : '—'}</span>
-                <span className="badge badge-muted">{tx(lang, '% grasa', '% fat')} {comp.avg !== null ? `${comp.avg.toFixed(1)}%` : '—'}</span>
-                <span className="badge badge-muted">{tx(lang, 'Masa magra', 'Lean mass')} {comp.leanMass !== null ? `${comp.leanMass.toFixed(1)} kg` : '—'}</span>
-                <span className="badge badge-muted">{tx(lang, 'Cintura/cadera', 'Waist/hip')} {comp.whr !== null ? comp.whr.toFixed(2) : '—'}</span>
-              </div>
-              <button className="btn btn-tonal" onClick={saveMeasurements}>
-                <Icon name="check" size={15} /> {tx(lang, 'Guardar medidas', 'Save measurements')}
-              </button>
-            </div>
-            {comp.missing.length > 0 && (
-              <p className="hint">
-                {tx(
-                  lang,
-                  `Para mejorar la estimación faltan: ${comp.missing.join(', ')}. La app usa los métodos disponibles sin exigir todos los datos.`,
-                  `Missing for a better estimate: ${comp.missing.join(', ')}. The app uses the available methods without requiring all data.`,
-                )}
-              </p>
-            )}
-          </div>
-        </section>
-
-        <FatTrend events={events} className="span-2" />
-
-        <section className="card span-2">
-          <div className="card-header">
-            <div>
-              <div className="card-title"><Icon name="target" /> {tx(lang, 'Rango seguro y proyección', 'Safe range and projection')}</div>
-              <div className="card-sub">
-                {tx(
-                  lang,
-                  'Rangos deducidos de tu sexo y edad. El peso objetivo se recalcula con tu composición y la proyección incorpora tus sesiones de fuerza y pasos medios. Son referencias orientativas, no diagnóstico médico.',
-                  'Ranges inferred from your sex and age. Target weight is recalculated from composition and the projection factors in your strength sessions and average steps. These are guides, not medical diagnosis.',
-                )}
-              </div>
-            </div>
-            <span className={`badge ${projection.safe ? 'badge-success' : 'badge-warning'}`}>
-              {projection.safe ? tx(lang, 'Dentro de rango', 'Within range') : tx(lang, 'Revisar objetivo', 'Review goal')}
-            </span>
-          </div>
-          <div className="card-body stack">
-            <div className="grid grid-2" style={{ gap: 10 }}>
-              <div className="metric">
-                <div className="metric-label">{tx(lang, 'IMC actual', 'Current BMI')}</div>
-                <div className="metric-value-lg">{comp.bmi !== null ? comp.bmi.toFixed(1) : '—'}</div>
-                <div className="metric-caption">{bmiRange.label} · {bmiStatus.label}</div>
-              </div>
-              <div className="metric">
-                <div className="metric-label">{tx(lang, '% grasa actual', 'Current body fat %')}</div>
-                <div className="metric-value-lg">{comp.avg !== null ? `${comp.avg.toFixed(1)}%` : '—'}</div>
-                <div className="metric-caption">
-                  {fatRange ? fatRange.label : tx(lang, 'Añade sexo para calcular el rango', 'Add sex to calculate the range')} · {classifyValue(comp.avg, fatRange, lang).label}
-                </div>
-              </div>
-              <div className="metric">
-                <div className="metric-label">
-                  {projection.targetSource === 'composition'
-                    ? tx(lang, 'Peso objetivo por composición', 'Composition target weight')
-                    : tx(lang, 'Peso objetivo', 'Target weight')}
-                </div>
-                <div className="metric-value-lg">{projection.targetWeight !== null ? `${projection.targetWeight.toFixed(1)} kg` : '—'}</div>
-                <div className="metric-caption">
-                  {projection.targetBmi !== null ? tx(lang, `IMC ${projection.targetBmi.toFixed(1)}`, `BMI ${projection.targetBmi.toFixed(1)}`) : tx(lang, 'Faltan datos', 'Missing data')}
-                  {projection.targetBodyFat !== null
-                    ? tx(lang, ` · ${projection.targetBodyFat.toFixed(0)}% grasa`, ` · ${projection.targetBodyFat.toFixed(0)}% fat`)
-                    : ''}
-                </div>
-                {projection.targetFatMass !== null && projection.targetLeanMass !== null && (
-                  <div className="metric-caption">
-                    {tx(
-                      lang,
-                      `${projection.targetLeanMass.toFixed(1)} kg magra · ${projection.targetFatMass.toFixed(1)} kg grasa`,
-                      `${projection.targetLeanMass.toFixed(1)} kg lean · ${projection.targetFatMass.toFixed(1)} kg fat`,
-                    )}
-                  </div>
-                )}
-              </div>
-              <div className="metric">
-                <div className="metric-label">{tx(lang, 'Ritmo estimado', 'Estimated rate')}</div>
-                <div className="metric-value-lg">
-                  {projection.weeklyRateKg > 0
-                    ? tx(lang, `${projection.weeklyRateKg.toFixed(2)} kg/sem`, `${projection.weeklyRateKg.toFixed(2)} kg/wk`)
-                    : '—'}
-                </div>
-                <div className="metric-caption">
-                  {projection.dailyKcalDelta === 0
-                    ? tx(lang, 'Sin déficit ni superávit', 'No deficit or surplus')
-                    : tx(
-                        lang,
-                        `${projection.dailyKcalDelta > 0 ? '+' : ''}${projection.dailyKcalDelta} kcal/día${
-                          projection.deficitPct !== null
-                            ? ` · ${Math.abs(Math.round(projection.deficitPct))}% del gasto`
-                            : ''
-                        }`,
-                        `${projection.dailyKcalDelta > 0 ? '+' : ''}${projection.dailyKcalDelta} kcal/day${
-                          projection.deficitPct !== null
-                            ? ` · ${Math.abs(Math.round(projection.deficitPct))}% of expenditure`
-                            : ''
-                        }`,
-                      )}
-                </div>
-                <div className="metric-caption">
-                  {tx(lang, `Fuerza: ${projection.strengthPerMonth}/mes`, `Strength: ${projection.strengthPerMonth}/mo`)}
-                  {' · '}
-                  {steps > 0
-                    ? tx(lang, `${Math.round(steps)} pasos/día`, `${Math.round(steps)} steps/day`)
-                    : tx(lang, 'Pasos: sin dato', 'Steps: no data')}
-                </div>
-                <div className="metric-caption">
-                  {tx(lang, `Entreno: ${training.effectivePerWeek}/sem`, `Training: ${training.effectivePerWeek}/wk`)}
-                  {' · '}
-                  {projection.avgIntakeKcal !== null
-                    ? tx(lang, `Ingesta: ${projection.avgIntakeKcal} kcal/día`, `Intake: ${projection.avgIntakeKcal} kcal/day`)
-                    : tx(lang, 'Ingesta: objetivo', 'Intake: target')}
-                </div>
-              </div>
-            </div>
-
-            <div className={`notice ${projection.safe ? 'notice-info' : 'notice-warn'}`}>
-              <Icon name={projection.safe ? 'info' : 'alert'} size={16} />
+            <div className="notice notice-info">
+              <Icon name="water" size={17} />
               <div>
-                <strong>{projection.message}</strong>
-                {projection.note && <div className="small">{projection.note}</div>}
-                {projection.etaDate && (
-                  <div className="small">
-                    {tx(lang, 'Fecha estimada:', 'Estimated date:')} {formatProjectionDate(projection.etaDate, lang)} ·{' '}
-                    {formatProjectionDuration(projection.weeks ?? 0, lang)}.
-                  </div>
-                )}
-                <div className="small muted">{bmiRange.note} {fatRange?.note ?? ''}</div>
+                <strong>{tx(lang, 'Agua objetivo:', 'Water target:')} {(waterTarget / 1000).toFixed(1)} L/{tx(lang, 'día', 'day')}</strong>
+                <div className="small">
+                  {tx(lang, 'Calculado a partir de ', 'Calculated from ')}
+                  {waterGuidance.leanMassKg !== null
+                    ? `${waterGuidance.leanMassKg.toFixed(1)} kg ${tx(lang, 'de masa magra', 'of lean mass')}`
+                    : tx(lang, 'tu peso', 'your weight')}
+                  {waterGuidance.fatMassKg !== null
+                    ? ` ${tx(lang, 'y', 'and')} ${waterGuidance.fatMassKg.toFixed(1)} kg ${tx(lang, 'de grasa', 'of fat')}`
+                    : ''}
+                  {tx(lang, ' y ', ' and ')}
+                  {training.weeklyMinutes} {tx(lang, 'min/semana de entrenamiento', 'min/week of training')}
+                  {tx(lang, '. Rango seguro hasta', '. Safe range up to')} {(waterSafeMax / 1000).toFixed(1)} L.
+                </div>
               </div>
             </div>
-
-            {projection.warnings.length > 0 && (
-              <div className="notice notice-warn">
-                <Icon name="alert" size={16} />
-                <div>
-                  {projection.warnings.map((warning, index) => (
-                    <div key={warning} className={index === 0 ? '' : 'small'}>
-                      {warning}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {projection.milestones.length > 0 && (
-              <div className="projection-track">
-                <span className="field-label">{tx(lang, 'Hitos aproximados', 'Approximate milestones')}</span>
-                <div className="projection-steps">
-                  {projection.milestones.map((milestone) => (
-                    <div key={milestone.date} className="projection-step">
-                      <strong>{milestone.weight.toFixed(1)} kg</strong>
-                      <span className="small muted">{formatProjectionDate(milestone.date, lang)}</span>
-                      {milestone.bodyFat !== null && (
-                        <span className="small">
-                          ≈{milestone.bodyFat.toFixed(1)}% {tx(lang, 'grasa', 'fat')}
-                        </span>
-                      )}
-                      {milestone.fatMass !== null && (
-                        <span className="small muted">
-                          {tx(lang, `${milestone.fatMass.toFixed(1)} kg grasa`, `${milestone.fatMass.toFixed(1)} kg fat`)}
-                          {milestone.leanMass !== null
-                            ? tx(lang, ` · ${milestone.leanMass.toFixed(1)} kg magra`, ` · ${milestone.leanMass.toFixed(1)} kg lean`)
-                            : ''}
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            <p className="hint">
-              {tx(
-                lang,
-                'El cálculo recalcula el gasto semana a semana con el peso simulado: al bajar de peso el mismo déficit rinde menos. Asume que mantienes la actividad, la fuerza, los pasos y la ingesta media. Una variación de 0,5–1 % por semana al perder grasa y de 0,25–0,5 % al ganar es un ritmo sostenible; con más fuerza se conserva mejor la masa magra.',
-                'The calculation recalculates expenditure week by week with the simulated weight: as you lose weight, the same deficit yields less. It assumes you keep your activity, strength work, steps and average intake. A weight change of 0.5–1% per week when losing fat and 0.25–0.5% when gaining is a sustainable rate; more strength work preserves lean mass better.',
-              )}
-            </p>
           </div>
         </section>
         </>
         )}
-
-        {tab === 'nutrition' && (
-        <>
+        {tab === 'ingesta' && (
+<>
+        <section className="card span-2">
+          <div className="card-body row wrap">
+            <button className={`btn ${autoIntake.enabledToday ? 'btn-primary' : 'btn-tonal'} btn-sm`} onClick={() => void saveAutoIntake(nutri)}>
+              <Icon name="check" size={14} /> {autoIntake.enabledToday ? tx(lang, 'Desactivar registro automático', 'Disable automatic logging') : tx(lang, 'Registrar ingesta de hoy', 'Log today’s intake')}
+            </button>
+            <span className="hint">
+              {tx(lang, `${autoIntake.days}/30 días · media ${Math.round(autoIntake.avg)} kcal/día`, `${autoIntake.days}/30 days · average ${Math.round(autoIntake.avg)} kcal/day`)}
+              {intakeSource === 'auto' ? tx(lang, ' · en uso en la proyección', ' · used in the projection') : ''}
+            </span>
+            <span className="hint">{tx(lang, 'Al activarlo, los macros del día se guardan solos al cambiarlos.', 'When enabled, the day’s macros are saved automatically when they change.')}</span>
+            <label className="field">
+              <span className="field-label">{tx(lang, 'Prioridad de ingesta', 'Intake priority')}</span>
+              <Select
+                value={intakePriority}
+                onChange={(value) => setIntakePriority(value as 'manual' | 'auto' | 'logged')}
+                options={[
+                  { value: 'manual', label: tx(lang, 'Manual', 'Manual') },
+                  { value: 'auto', label: tx(lang, 'Automática (≥5 días/30)', 'Automatic (≥5 days/30)') },
+                  { value: 'logged', label: tx(lang, 'Registrada', 'Logged') },
+                ]}
+              />
+            </label>
+            <span className="hint">{tx(lang, 'Se usa la fuente prioritaria disponible; si falta, se cae a la siguiente.', 'The highest-priority available source is used; otherwise it falls back to the next.')}</span>
+          </div>
+        </section>
         <section className="card span-2">
           <div className="card-header">
             <div>
@@ -954,25 +572,7 @@ export default function PanelView({ deviceId, events, exercises, onRefresh, noti
                     caption={`${goalLabel(goalMode, lang)} · ${activityOption(activity, lang).label}`}
                   />
                 </div>
-                <div className="notice notice-info">
-                  <Icon name="water" size={17} />
-                  <div>
-                    <strong>
-                      {tx(lang, 'Agua objetivo:', 'Water target:')} {(waterTarget / 1000).toFixed(1)} L/{tx(lang, 'día', 'day')}
-                    </strong>
-                    <div className="small">
-                      {tx(lang, 'Ajustada a masa magra (', 'Adjusted to lean mass (')}
-                      {waterGuidance.leanMassKg !== null
-                        ? `${waterGuidance.leanMassKg.toFixed(1)} kg`
-                        : tx(lang, 'estimada', 'estimated')}
-                      {tx(
-                        lang,
-                        `) + 500 ml por hora media de entrenamiento. Rango seguro hasta ${(waterSafeMax / 1000).toFixed(1)} L. Fibra objetivo: ${macros.fiber} g/día.`,
-                        `) + 500 ml per average training hour. Safe range up to ${(waterSafeMax / 1000).toFixed(1)} L. Fiber target: ${macros.fiber} g/day.`,
-                      )}
-                    </div>
-                  </div>
-                </div>
+                {macros && <p className="hint">{tx(lang, `Fibra objetivo: ${macros.fiber} g/día.`, `Fiber target: ${macros.fiber} g/day.`)}</p>}
                 {macros.missing.length > 0 && (
                   <p className="hint">
                     {tx(lang, 'Estimación adaptativa: faltan ', 'Adaptive estimate: missing ')}
@@ -1153,7 +753,9 @@ export default function PanelView({ deviceId, events, exercises, onRefresh, noti
             )}
           </div>
         </section>
-
+        </>
+        )}
+        {tab === 'recetas' && (
         <section className="card span-2">
           <div className="card-header">
             <div>
@@ -1167,7 +769,20 @@ export default function PanelView({ deviceId, events, exercises, onRefresh, noti
                 )}
               </div>
             </div>
-            <span className="badge badge-muted">{tx(lang, 'Basado en evidencia', 'Evidence-based')}</span>
+            <div className="row wrap">
+              <button className="btn btn-ghost btn-sm" onClick={() => setRecipeSeed((seed) => seed + 1)}>
+                <Icon name="history" size={14} /> {tx(lang, 'Rotar recetas', 'Rotate recipes')}
+              </button>
+              <span className="badge badge-success">{tx(lang, 'Sin gluten ni frutos secos', 'Gluten & nut free')}</span>
+            </div>
+            <div className="row wrap">
+              <span className="hint small">{tx(lang, 'Mis alérgenos:', 'My allergens:')}</span>
+              {(Object.keys(ALLERGEN_LABELS) as AllergenId[]).map((id) => (
+                <button key={id} type="button" className={`chip ${userAllergens.includes(id) ? 'active' : ''}`} onClick={() => toggleUserAllergen(id)}>
+                  {ALLERGEN_LABELS[id][lang === 'en' ? 1 : 0]}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="card-body stack">
             <div className="recipe-grid">
@@ -1194,6 +809,20 @@ export default function PanelView({ deviceId, events, exercises, onRefresh, noti
                   <p className="hint small">
                     <strong>{tx(lang, 'Por qué:', 'Why:')}</strong> {recipe.science}
                   </p>
+                  {allergensFor(recipe).some((id) => userAllergens.includes(id)) && (
+                    <div className="notice notice-warn">
+                      <Icon name="alert" size={15} />
+                      <span>{tx(lang, 'Esta receta contiene alérgenos que marcaste.', 'This recipe contains allergens you selected.')}</span>
+                    </div>
+                  )}
+                  {allergensFor(recipe).length > 0 && (
+                    <div className="row wrap">
+                      <span className="hint small">{tx(lang, 'Alérgenos:', 'Allergens:')}</span>
+                      {allergensFor(recipe).map((id) => (
+                        <span key={id} className="badge badge-warning">{ALLERGEN_LABELS[id][lang === 'en' ? 1 : 0]}</span>
+                      ))}
+                    </div>
+                  )}
                   <div className="row between wrap">
                     <span className="hint small">
                       {recipe.minutes} min · {mealSlotLabel(recipe.meal, lang)} · {recipe.macros.grams} g
@@ -1212,160 +841,6 @@ export default function PanelView({ deviceId, events, exercises, onRefresh, noti
                 'In a deficit, protein and fiber per calorie come first; in a surplus, energy density and carbs around training. Adjust portions to your hunger and goals.',
               )}
             </p>
-          </div>
-        </section>
-        </>
-        )}
-
-        {tab === 'summary' && (
-        <>
-        <section className="card">
-          <div className="card-header">
-            <div>
-              <div className="card-title"><Icon name="dumbbell" /> {tx(lang, 'Entrenamiento', 'Training')}</div>
-              <div className="card-sub">
-                {tx(lang, 'Resumen de los últimos 7 días y mapa de calor muscular.', 'Summary of the last 7 days and muscle heatmap.')}
-              </div>
-            </div>
-            <button className="btn btn-ghost btn-sm" onClick={() => onNavigate('training')}>
-              {tx(lang, 'Ver todo', 'View all')} <Icon name="chevron" size={14} />
-            </button>
-          </div>
-          <div className="card-body">
-            <div className="grid grid-2" style={{ gap: 12 }}>
-              <div className="stack-sm">
-                <Stat label={tx(lang, 'Sesiones', 'Sessions')} value={exerciseSummary.weekSessions} caption={minutesLabel(exerciseSummary.weekMinutes)} />
-                <Stat
-                  label={tx(lang, 'Series', 'Sets')}
-                  value={exerciseSummary.weekSets}
-                  caption={tx(
-                    lang,
-                    `${Math.round(exerciseSummary.weekVolume).toLocaleString('es')} kg de volumen`,
-                    `${Math.round(exerciseSummary.weekVolume).toLocaleString('en')} kg of volume`,
-                  )}
-                />
-              </div>
-              <BodyHeatmap load={zoneLoad} compact />
-            </div>
-            <div className="row between" style={{ marginTop: 12 }}>
-              <span className="hint">
-                {topZone
-                  ? tx(lang, `Zona más cargada: ${zoneName(topZone, lang)}`, `Most loaded zone: ${zoneName(topZone, lang)}`)
-                  : tx(lang, 'Sin datos de zonas todavía.', 'No zone data yet.')}
-              </span>
-              {alerts.length > 0 ? (
-                <span className="badge badge-warning">
-                  <Icon name="alert" size={12} /> {tx(lang, `${alerts.length} alerta(s)`, `${alerts.length} alert(s)`)}
-                </span>
-              ) : (
-                <span className="badge badge-success"><Icon name="check" size={12} /> {tx(lang, 'Carga equilibrada', 'Balanced load')}</span>
-              )}
-            </div>
-          </div>
-        </section>
-
-        <section className="card">
-          <div className="card-header">
-            <div>
-              <div className="card-title"><Icon name="alert" /> {tx(lang, 'Alertas de sobreentrenamiento', 'Overtraining alerts')}</div>
-              <div className="card-sub">
-                {tx(
-                  lang,
-                  'Compara series y minutos por zona con rangos semanales recomendados.',
-                  'Compare sets and minutes per zone against recommended weekly ranges.',
-                )}
-              </div>
-            </div>
-          </div>
-          <div className="card-body stack">
-            {alerts.length === 0 ? (
-              <div className="notice notice-success">
-                <Icon name="check" size={17} />
-                <div>
-                  <strong>{tx(lang, 'Sin señales de sobreentrenamiento', 'No signs of overtraining')}</strong>
-                  <div className="small">
-                    {tx(
-                      lang,
-                      'Las zonas entrenadas esta semana están dentro de rangos razonables.',
-                      'The zones trained this week are within reasonable ranges.',
-                    )}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              alerts.slice(0, 5).map((a) => (
-                <div key={a.id} className={`notice ${a.severity === 'high' ? 'notice-error' : a.severity === 'warn' ? 'notice-warn' : 'notice-info'}`}>
-                  <Icon name="alert" size={16} />
-                  <div>
-                    <strong>{a.title}</strong>
-                    <div className="small">{a.detail}</div>
-                  </div>
-                </div>
-              ))
-            )}
-            {alerts.length > 5 && (
-              <button className="btn btn-ghost btn-sm" onClick={() => onNavigate('training')}>
-                {tx(lang, 'Ver todas', 'View all')}
-              </button>
-            )}
-          </div>
-        </section>
-        </>
-        )}
-
-        {tab === 'reminders' && (
-        <section className="card span-2">
-          <div className="card-header">
-            <div>
-              <div className="card-title"><Icon name="clock" /> {tx(lang, 'Recordatorios', 'Reminders')}</div>
-              <div className="card-sub">
-                {tx(lang, 'Avisos locales mientras la app está abierta.', 'Local alerts while the app is open.')}
-              </div>
-            </div>
-          </div>
-          <div className="card-body stack">
-            <div className="grid grid-2" style={{ gap: 10 }}>
-              <Field label={tx(lang, 'Título', 'Title')}>
-                <input
-                  className="input"
-                  value={remTitle}
-                  onChange={(e) => setRemTitle(e.target.value)}
-                  placeholder={tx(lang, 'Tomar agua', 'Drink water')}
-                />
-              </Field>
-              <Field label={tx(lang, 'Hora', 'Time')}><input className="input" type="time" value={remTime} onChange={(e) => setRemTime(e.target.value)} /></Field>
-            </div>
-            <div className="chips">
-              {dayNames(lang).map((d, i) => (
-                <button key={d} type="button" className={`chip ${remDays.includes(i) ? 'active' : ''}`} onClick={() => toggleRemDay(i)}>{d}</button>
-              ))}
-            </div>
-            <button className="btn btn-tonal btn-sm" onClick={saveReminder}>
-              <Icon name="plus" size={14} /> {tx(lang, 'Añadir recordatorio', 'Add reminder')}
-            </button>
-            {reminders.length === 0 ? (
-              <p className="hint">{tx(lang, 'Sin recordatorios.', 'No reminders.')}</p>
-            ) : (
-              <div className="list">
-                {reminders.map((r) => (
-                  <div key={r.id} className="list-item">
-                    <div className="list-item-main">
-                      <span className="list-item-title">{r.title}</span>
-                      <span className="list-item-sub">
-                        {r.time} · {r.days.map((d) => dayNames(lang)[d]).join(', ')}
-                      </span>
-                    </div>
-                    <button
-                      className="btn-icon"
-                      aria-label={tx(lang, `Eliminar ${r.title}`, `Delete ${r.title}`)}
-                      onClick={() => void deleteReminder(r.id)}
-                    >
-                      <Icon name="trash" size={15} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         </section>
         )}
