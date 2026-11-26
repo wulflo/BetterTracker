@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RECIPES, allergensFor, isGlutenOrNut, recipeLogItems, recipeMacros, recommendRecipes } from './recipes';
+import { RECIPES, allergensFor, isGlutenOrNut, localizedRecipe, recipeLogItems, recipeMacros, recommendRecipes } from './recipes';
 
 describe('recetas', () => {
   it('calcula los macros con la misma base de alimentos que el diario', () => {
@@ -68,5 +68,30 @@ describe('catálogo ampliado de recetas', () => {
     const recipe = RECIPES.find((r) => r.ingredients.some((i) => i.foodId.startsWith('gambas')))!;
     expect(allergensFor(recipe)).toContain('marisco');
     expect(allergensFor(recipe)).not.toContain('lacteos');
+  });
+});
+
+describe('traducción de recetas al inglés', () => {
+  // Detecta tanto texto en español como traducciones mecánicas a medias
+  // ("Bowl de chicken", "... fibra de verdura and grasa ...").
+  // La «é» se excluye porque «Sautéed» es inglés correcto.
+  const spanish = /\b(de|la|las|los|con|para|entre|por|una|sin)\b|[áíóúñ]/i;
+
+  it('ofrece nombre, descripción, ciencia y etiquetas en inglés para cada receta', () => {
+    for (const recipe of RECIPES) {
+      const en = localizedRecipe(recipe, 'en');
+      expect(en).not.toBe(recipe);
+      expect(spanish.test(`${en.name} ${en.description} ${en.science} ${en.tags.join(' ')}`)).toBe(false);
+    }
+  });
+
+  it('las sugerencias recomendadas llegan traducidas', () => {
+    for (const recipe of recommendRecipes('cut', undefined, 3, 'en', 0)) {
+      expect(spanish.test(`${recipe.name} ${recipe.description} ${recipe.science}`)).toBe(false);
+    }
+  });
+
+  it('conserva el texto original en español', () => {
+    for (const recipe of RECIPES) expect(localizedRecipe(recipe, 'es')).toBe(recipe);
   });
 });

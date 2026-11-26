@@ -18,9 +18,13 @@ const MAX_SEARCH_RESULTS: usize = 8;
 const SEARCH_CACHE_TTL: Duration = Duration::from_secs(600);
 const SEARCH_CACHE_MAX: usize = 24;
 
+/// Entrada de la caché de búsqueda: momento en que se guardó y resultados.
+type SearchCacheEntry = (Instant, Vec<Value>);
+type SearchCache = HashMap<String, SearchCacheEntry>;
+
 /// Caché pequeña y con caducidad: evita repetir la misma búsqueda al teclear
 /// y crece como máximo hasta `SEARCH_CACHE_MAX` entradas.
-static SEARCH_CACHE: OnceLock<Mutex<HashMap<String, (Instant, Vec<Value>)>>> = OnceLock::new();
+static SEARCH_CACHE: OnceLock<Mutex<SearchCache>> = OnceLock::new();
 
 /**
  * Busca un producto por EAN/UPC en Open Food Facts.
