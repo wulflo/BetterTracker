@@ -1,5 +1,13 @@
 # Avances recientes
 
+## 0.10.4 (2026-11-26)
+- Interfaz sin blur: cero `box-shadow`, bordes de cajas derivados del acento y foco con `outline`.
+- Ajustes con 5 pestañas horizontales (mosaico 3+2 en vertical) y tamaño de modal fijo; la cinta no se comprime con 10+ snapshots.
+- Figura corporal con pestañas, Medidas arriba, registro rápido de peso, glosarios y silueta rediseñada sin selector duplicado; Panel pierde la pestaña «Cuerpo»; Historial baja de lugar en la sidebar.
+- Ejercicios con descripción y vídeo; búsqueda de alimentos con macros y alta directa; el peso de Medidas alimenta el historial.
+- Modelo: TEF/balance coherentes, EAT en todas las vistas, SEE corregido, fuerza sin saltos, intervalo p5–p95 y ecuaciones por sexo/edad (Schofield, Porter).
+- Limpieza: `.agents/`, 4 skills nuevas, 22→17 comandos Rust y código muerto eliminado. Detalles en `docs/releases/v0.10.4.md`.
+
 ## Cierres de la app en Android (causa raíz)
 - **Diagnóstico**: reqwest 0.13 con la feature `rustls` activa `rustls-platform-verifier`, que exige inicialización JNI (`android::init_with_env`) que Tauri no hace. Al construir el cliente HTTPS entra en panic y, con `panic = "abort"` del perfil release, la app muere al instante. Eso causaba los cierres al **comprobar actualizaciones** (`fetch_update_manifest`) y al **escanear** (buscar el producto en Open Food Facts usa la misma pila). Escritorio no se ve afectado porque ahí el verificador sí se inicializa.
 - **Fix**: el backend pasa a `reqwest 0.12` con `rustls-tls-webpki-roots` (raíces de Mozilla, igual que `tauri-plugin-http`, que funciona en Android sin ese verificador).

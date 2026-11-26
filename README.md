@@ -5,7 +5,7 @@
   Everything you log stays in a folder you choose. No accounts, no cloud, no telemetry.</p>
 
   <p>
-    <a href="VERSION"><img src="https://img.shields.io/badge/version-0.10.2-4f7cff?style=flat-square" alt="Version 0.10.2"></a>
+    <a href="VERSION"><img src="https://img.shields.io/badge/version-0.10.4-4f7cff?style=flat-square" alt="Version 0.10.4"></a>
     <a href="https://github.com/wulflo/BetterTracker/actions/workflows/ci.yml"><img src="https://github.com/wulflo/BetterTracker/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2ea44f?style=flat-square" alt="MIT license"></a>
     <img src="https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20Android-6b7280?style=flat-square" alt="Platforms">
@@ -22,10 +22,10 @@
     <a href="README.es.md">Español</a>
   </p>
 
-  <p>Current version: <strong>0.10.2</strong></p>
+  <p>Current version: <strong>0.10.4</strong></p>
 </div>
 
-<img src="docs/screenshots/dashboard.en.png" alt="Better Fitness Tracker dashboard with daily metrics, macros, water and training summary">
+<img src="docs/screenshots/dashboard.en.png" alt="Better Tracker Nutrition view with food search, macros, water and recipes">
 
 ## Screenshots
 
@@ -70,7 +70,7 @@ On Linux the app uses GTK/WebKit and runs natively on Wayland. When the propriet
 
 The full interface is available in Spanish and English, switchable in Settings and stored on the device. Food, recipe, body-zone and metric labels are translated too.
 
-### Panel
+### Alimentación
 
 - Daily overview with current weight, BMI, estimated body-fat percentage, and weekly training volume.
 - Quick weight logging plus a full measurement form without leaving the dashboard.

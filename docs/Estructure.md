@@ -2,7 +2,7 @@
 
 > **Índice técnico detallado de Better Tracker (Better Fitness Tracker).**
 >
-> Versión del código indexada: **0.10.2** (`VERSION`, `package.json`, `src-tauri/tauri.conf.json`, `VAULT_SCHEMA_VERSION = 1`).
+> Versión del código indexada: **0.10.4** (`VERSION`, `package.json`, `src-tauri/tauri.conf.json`, `VAULT_SCHEMA_VERSION = 1`).
 > Fecha del índice: **2026-11-25**.
 >
 > Este documento **no modifica ni describe cambios en el código**: es solo un mapa de referencia.
@@ -18,7 +18,7 @@
 
 | Notación | Significado |
 | :--- | :--- |
-| `ruta/archivo.tsx:123` | Archivo y línea aproximada donde empieza el símbolo. Las líneas son las de la versión 0.10.2 y pueden moverse con edits posteriores; el **nombre del símbolo** es el dato estable. |
+| `ruta/archivo.tsx:123` | Archivo y línea aproximada donde empieza el símbolo. Las líneas son las de la versión 0.10.4 y pueden moverse con edits posteriores; el **nombre del símbolo** es el dato estable. |
 | `símbolo()` | Función, componente o método exportado. |
 | `#[tauri::command]` | Función Rust expuesta al frontend mediante `invoke("nombre")`. |
 | `LNNN` | Número de línea dentro del archivo que se está describiendo. |
@@ -68,7 +68,7 @@
                                       │ <script type="module" src="/src/main.tsx">
                       ┌───────────────▼──────────────────────┐
                       │ src/main.tsx → ThemeProvider →       │
-                      │ LanguageProvider → App.tsx (985 L)   │
+                      │ LanguageProvider → App.tsx (1066 L)   │
                       └───────────────┬──────────────────────┘
                     ┌─────────────────┼──────────────────┐
         ┌───────────▼──────────┐  ┌───▼────────────┐  ┌──▼──────────────────┐
@@ -81,7 +81,7 @@
                                       │ invoke()
                       ┌───────────────▼──────────────────────┐
                       │ src-tauri/src/lib.rs (129 L)         │
-                      │ 22 comandos + plugins + single-instance│
+                      │ 18 comandos + plugins + single-instance│
                       │ commands.rs · vault.rs · barcode.rs   │
                       └───────────────┬──────────────────────┘
                                       │ FS / HTTPS (Rust)
@@ -107,7 +107,7 @@
 | `index.html` | 18 | Documento único con `<div id="root">`, meta de tema y dos scripts. |
 | `public/theme-init.js` | 17 | IIFE síncrono que aplica `bt.theme`/`bt.accent` antes del primer pintado (la CSP prohíbe inline scripts). |
 | `src/main.tsx` | 25 | `boot()` (11): `installInputGuard()`, `createRoot`, providers y `invoke("frontend_ready")` 700 ms después. |
-| `src/App.tsx` | 985 | Shell, navegación, bóveda/backups, Ajustes y toasts. |
+| `src/App.tsx` | 1066 | Shell, navegación, bóveda/backups, Ajustes con pestañas y toasts. |
 | `src/theme.tsx` | 108 | Modo (dark/light) + 9 acentos; `applyTheme()` (56). |
 | `src/i18n.tsx` | 97 | `es`/`en`, `t()`, `tx()`, `locale()`, `plural()`, `formatNumber()`. |
 | `vite.config.ts` | 14 | `root: '.'`, `publicDir: 'public'`, JSX automático, puerto 1420. |
@@ -149,14 +149,13 @@
 
 ### 1.6 Frontera TypeScript ↔ Rust: `invoke` ↔ comando
 
-El frontend usa 18 llamadas `invoke` (16 wrappers en `vault.ts`/`updater.ts`, una en
-`main.tsx`, una en `UpdatePanel.tsx`). El backend registra 22 comandos (§8.2).
+El frontend usa 17 llamadas `invoke` (16 wrappers en `vault.ts`/`updater.ts`, una en
+`main.tsx`, una en `UpdatePanel.tsx`). El backend registra 18 comandos (§8.2).
 
 | `invoke` | Definición Rust | Quién lo llama (frontend) |
 | :--- | :--- | :--- |
 | `frontend_ready` | `commands.rs:754` | `main.tsx:21` (`boot`) |
 | `get_vault_info` | `vault.rs:364` | `vault.ts:95` → `App.tsx:125` |
-| `get_vault_path` | `vault.rs:369` | `vault.ts:100` |
 | `select_vault` | `vault.rs:306` | `vault.ts:109` → `App.tsx chooseVault` (246) |
 | `vault_backup_status` | `vault.rs:1191` | `vault.ts:123` → `App.tsx:186` |
 | `vault_run_backup` | `vault.rs:1228` | `vault.ts:135` → `App.tsx:169/224/270` |
@@ -167,7 +166,7 @@ El frontend usa 18 llamadas `invoke` (16 wrappers en `vault.ts`/`updater.ts`, un
 | `append_event` | `commands.rs:777` | `vault.ts:177` → todas las vistas |
 | `get_app_info` | `commands.rs:729` | `vault.ts:194` → `App.tsx:125` |
 | `lookup_barcode` | `barcode.rs:18` | `vault.ts:208` → `FoodLog.tsx` |
-| `open_external` | `commands.rs:694` | `links.ts:18` (solo HTTPS whitelist) |
+| `open_external` | `commands.rs:695` | `links.ts:12` (HTTPS: repo oficial + vídeos permitidos) |
 | `fetch_update_manifest` | `commands.rs:165` | `updater.ts:282` |
 | `download_and_install_linux_package` | `commands.rs:421` | `updater.ts:241` |
 | `download_android_apk` | `commands.rs:547` | `updater.ts:259` |
@@ -206,36 +205,38 @@ El progreso llega como evento `update-progress`; la ruta del instalador queda gu
 | Archivo | Líneas | Responsabilidad en una frase |
 | :--- | ---: | :--- |
 | `main.tsx` | 25 | Arranque React y providers. |
-| `App.tsx` | 985 | Shell, 5 vistas, bóveda, backups, Ajustes y toasts. |
+| `App.tsx` | 1066 | Shell, 5 vistas (Panel/Training/Body/Wellness/History), bóveda, backups, Ajustes con pestañas y toasts. |
 | `theme.tsx` | 108 | Modo/acento y `applyTheme()`. |
 | `i18n.tsx` | 97 | Diccionarios ES/EN y helpers de formato. |
-| `types.ts` | 272 | Todos los tipos del dominio. |
-| `vault.ts` | 305 | Frontera TS↔Rust de la bóveda; mocks en navegador. |
-| `metrics.ts` | 2276 | Reductores, energía, composición, nutrición, series. |
-| `bodyRange.ts` | 1319 | Rangos seguros y proyección corporal (Monte Carlo). |
-| `foodDb.ts` | 922 | 521 alimentos, unidades, búsqueda y GTIN. |
-| `recipes.ts` | 486 | 12 recetas y recomendador por macros. |
+| `types.ts` | 276 | Todos los tipos del dominio. |
+| `vault.ts` | 362 | Frontera TS↔Rust de la bóveda; mocks en navegador. |
+| `metrics.ts` | 2301 | Reductores, energía, composición, nutrición, series. |
+| `bodyRange.ts` | 1376 | Rangos seguros y proyección corporal (Monte Carlo). |
+| `foodDb.ts` | 933 | 521 alimentos, unidades, búsqueda y GTIN. |
+| `recipes.ts` | 1283 | 50 recetas sin gluten/frutos secos, rotación por semilla y alérgenos. |
 | `nutrition.ts` | 345 | Digest semanal de nutrición. |
 | `wellness.ts` | 403 | Hábitos, ánimo, rachas y resúmenes. |
 | `meals.ts` | 85 | Borrador diario en `localStorage`. |
-| `zones.ts` | 253 | 10 zonas corporales y clasificación de ejercicios. |
+| `zones.ts` | 249 | 10 zonas corporales y clasificación de ejercicios. |
+| `dates.ts` | 9 | `dayNames(lang)` compartido por Panel/Training/Wellness. |
+| `energy.ts` | 74 | `bmrMifflin`, `bmrDynamic`, `bmrAgeAdjusted` (Schofield/Porter), `bmrEquationLabel` y `walkingKcalPerDay`. |
 | `barcodeCatalog.ts` | 107 | Catálogo offline de 11.232 códigos. |
-| `projectionInputs.ts` | 188 | Hook de frecuencia/pasos/ingesta para la proyección. |
+| `projectionInputs.ts` | 255 | Hook de frecuencia/pasos/ingesta para la proyección. |
 | `updater.ts` | 432 | Actualizaciones híbridas por plataforma. |
-| `links.ts` | 30 | URLs oficiales y apertura segura. |
+| `links.ts` | 42 | URLs oficiales, apertura segura y validación de vídeos. |
 | `inputGuard.ts` | 59 | Solo pegado de texto plano; anti-drop/contexto. |
 | `errors.ts` | 37 | Normalización de errores de Tauri. |
-| `PanelView.tsx` | 1392 | Panel: resumen, cuerpo, nutrición y recordatorios. |
-| `TrainingView.tsx` | 1695 | Biblioteca, rutinas, plan, sesión, calendario y progreso. |
-| `HistoryView.tsx` | 718 | Historial de entrenamiento y nutrición. |
-| `BodyView.tsx` | 722 | Medidas, composición y proyección. |
-| `WellnessView.tsx` | 585 | Hábitos, ánimo y semana. |
-| `BodyFigure.tsx` | 259 | Silueta SVG con nodos arrastrables. |
+| `PanelView.tsx` | 812 | Alimentación: Ingesta, Agua y Recetas. |
+| `TrainingView.tsx` | 1791 | Biblioteca (con descripciones/vídeos), rutinas, plan, sesión, calendario y progreso. |
+| `HistoryView.tsx` | 737 | Historial de entrenamiento y nutrición. |
+| `BodyView.tsx` | 824 | Medidas, composición y proyección. |
+| `WellnessView.tsx` | 715 | Hábitos con clasificación, ánimo, recordatorios y semana. |
+| `BodyFigure.tsx` | 229 | Silueta SVG adapta su forma al sexo del formulario de medidas y tiene nodos arrastrables. |
 | `components/Select.tsx` | 170 | Select accesible usado por toda la app. |
 | `components/Fields.tsx` | 104 | `NumberInput`, `Field`, `EmptyState`, `Stat`. |
 | `components/Icons.tsx` | 188 | Iconos SVG y `LogoMark`. |
-| `components/Charts.tsx` | 446 | `LineChart`, `BarChart`, heatmaps, sparkline, `WeekBars`. |
-| `components/FoodLog.tsx` | 708 | Diario de comidas, búsqueda y códigos. |
+| `components/Charts.tsx` | 456 | `LineChart`, `BarChart`, heatmaps, sparkline, `WeekBars`. |
+| `components/FoodLog.tsx` | 772 | Diario de comidas; búsqueda unificada local + códigos + palabras clave. |
 | `components/FatTrend.tsx` | 164 | Evolución de grasa/cintura. |
 | `components/RestTimer.tsx` | 202 | Temporizador de descanso. |
 | `components/UpdatePanel.tsx` | 288 | UI de actualizaciones. |
@@ -244,7 +245,7 @@ El progreso llega como evento `update-progress`; la ruta del instalador queda gu
 | `components/ProjectionCurve.tsx` | 177 | Curva SVG con `ResizeObserver`. |
 | `components/ProjectionWeights.tsx` | 132 | Tabla semana a semana de la proyección. |
 | `views/custom-select.ts` | 265 | Implementación de referencia **no enlazada** + `migrateSelect`. |
-| `styles.css` | 3975 | Tokens, temas, componentes y media queries. |
+| `styles.css` | 4120 | Tokens, temas, componentes y media queries; sin box-shadow. |
 | `data/barcodeCatalog.json` | 1 (614 KB) | 11.232 tuplas `[código, nombre, categoría, país]`. |
 | `data/barcodeCatalogMeta.json` | 139 | Metadatos, recuentos y 16 plantillas de macros. |
 | `data/foodNames.en.ts` | 502 | Nombres de alimentos en inglés. |
@@ -254,11 +255,11 @@ El progreso llega como evento `update-progress`; la ruta del instalador queda gu
 
 | Archivo | Líneas | Responsabilidad |
 | :--- | ---: | :--- |
-| `src/lib.rs` | 129 | Builder, plugins, 22 comandos, instancia única, watchdog. |
+| `src/lib.rs` | 124 | Builder, plugins, 18 comandos, instancia única, watchdog. |
 | `src/main.rs` | 229 | `--version`, ajustes de WebKitGTK en Linux y `run()`. |
 | `src/commands.rs` | 926 | 14 comandos: info, splash, enlaces, eventos y actualizaciones. |
-| `src/vault.rs` | 2463 | 7 comandos: configuración, bóveda, eventos y copias `longlife`. |
-| `src/barcode.rs` | 295 | `lookup_barcode` contra Open Food Facts. |
+| `src/vault.rs` | 2456 | 7 comandos: configuración, bóveda, eventos y copias `longlife`. |
+| `src/barcode.rs` | 439 | `lookup_barcode` y `search_foods_remote` contra Open Food Facts (con host alternativo). |
 | `src/manifest.rs` | 68 | Parser estricto del `release-manifest.json` (opt-in, no usado en runtime). |
 | `src/version.rs` | 154 | Versión embebida, `AppInfo`, `compare_versions`, formato de instalación. |
 | `build.rs` | ~70 | Inyecta `VERSION`, commit, fecha y `VAULT_SCHEMA_VERSION`. |
@@ -284,6 +285,7 @@ El progreso llega como evento `update-progress`; la ruta del instalador queda gu
 | Iconos | `scripts/generate-icons.mjs`, `src-tauri/icons/app-icon.png` |
 | Datos | `scripts/generate-barcode-catalog.mjs` |
 | Pruebas visuales | `playwright.config.ts`, `tests/visual/smoke.spec.ts` |
+| Asistentes de código | `.agents/skills/` (6 skills, incl. `vault-performance-guard`) y `.agents/commands/estructure-sync.md`. Antes se llamaban `.opencode/`. |
 
 ---
 
@@ -295,7 +297,7 @@ El progreso llega como evento `update-progress`; la ruta del instalador queda gu
 | :--- | :--- | :--- |
 | Persona y objetivo | `Sex` 1, `GoalMode` 2, `ActivityLevel` 3, `Goal` 166 | `cut\|maintain\|bulk`; `auto\|sedentary\|light\|moderate\|high\|very_high`. `Goal` está declarado pero **no se usa**; la UI usa el evento `goal.mode`. |
 | Alimentos | `FoodCategory` 11, `MealSlot` 29, `FoodPer100` 31, `Food` 39, `BarcodeProduct` 57, `FoodLogItem` 62 | Macros por 100 g; `units` = gramos por unidad; `water` en ml; `FoodLogItem` guarda macros ya calculados. |
-| Entrenamiento | `Exercise` 78, `SetEntry` 86, `WorkoutEntry` 92, `Workout` 97, `Session` 104, `Routine` 121, `Plan` 127, `Mesocycle` 135, `PR` 233 | `weight` en kg; `duration` en **segundos**; `Plan.days` 0=domingo; 1RM en `estimate1RM`. |
+| Entrenamiento | `Exercise` 78 (con `description`/`videoUrl` opcionales), `SetEntry` 90, `WorkoutEntry` 96, `Workout` 101, `Session` 108, `Routine` 125, `Plan` 131, `Mesocycle` 139, `PR` 237 | `weight` en kg; `duration` en **segundos**; `Plan.days` 0=domingo; 1RM en `estimate1RM`. |
 | Cuerpo | `BodyMeasures` 209, `MeasurementEntry` 229, `WeightEntry` 151 | Todas las circunferencias en **cm**, peso en **kg**, altura en **cm**; `EMPTY_MEASURES` 257. |
 | Nutrición | `NutritionEntry` 156, `Reminder` 143 | `kcal`, macros en g, `water` en ml. |
 | Bienestar | `HabitFrequency` 174, `Habit` 176, `HabitLog` 192, `MoodScore` 199, `MoodEntry` 201 | Clave lógica de log `${habitId}:${date}`; resumen máx. 5 palabras. |
@@ -351,12 +353,12 @@ se inyecta en compilación desde `VAULT_SCHEMA_VERSION` (= 1) y se expone en `Ap
 
 ## 4. Núcleo de dominio
 
-### 4.1 `src/metrics.ts` (2276 líneas) — el motor
+### 4.1 `src/metrics.ts` (2301 líneas) — el motor
 
 | Área | Símbolos (L) |
 | :--- | :--- |
 | Fechas y formato | `DAY_MS` 25, `todayISO` 27, `parseISO` 34, `addDays` 39, `daysBetween` 45, `startOfWeek` 77, `weekKey` 84, `formatProjectionDate` 63 |
-| Reductores | `visibleTrainingEvents` 329, `reduceExercises` 343, `reduceWorkouts` 352, `reduceSessions` 358, `reducePRs` 364, `reduceWeights` 370, `reduceMeasurements` 377, `reduceNutrition` 388, `reduceRoutines` 414, `reducePlans` 430, `reduceMesocycles` 440, `reduceReminders` 450 |
+| Reductores | `visibleTrainingEvents` 329, `reduceExercises` 338, `reduceWorkouts` 352, `reduceSessions` 358, `reducePRs` 364, `reduceWeights` 370, `reduceMeasurements` 377, `reduceNutrition` 388, `reduceRoutines` 414, `reducePlans` 430, `reduceMesocycles` 440, `reduceReminders` 450 |
 | Preferencias por evento | `goalModeFromEvents` 102, `activityLevelFromEvents` 205, `trainingFrequencyFromEvents` 261, `averageStepsFromEvents` 243, `averageIntakeFromEvents` 273 |
 | Entrenamiento | `trainingSummary` 526, `estimateTraining` 669, `trainingAlerts` 733, `estimate1RM` 2160, `weeklySeries` 2177, `exerciseSeries` 2244 |
 | Energía | `bmrMifflin` 861, `activityBaseFactor` 901, `trainingEatKcalPerDay` 931, `computeEnergyExpenditure` 948, `computeMacros` 974 |
@@ -376,7 +378,7 @@ Boer 1740). `bodyComposition` (1759) agrupa por familias, pondera por `1/SEE²`,
 mediana por familia, factor Huber y produce `avg`/`min`/`max`, `fatMass`, `leanMass`,
 `coverage`, `confidence` (15–95), FFMI, clasificación USARIEM y WHtR.
 
-### 4.2 `src/bodyRange.ts` (1319 líneas) — proyección
+### 4.2 `src/bodyRange.ts` (1376 líneas) — proyección
 
 - `safeBmiRange` 166 (OMS 18.5–24.9), `safeBodyFatRange` 207 (por sexo/edad),
   `classifyValue` 257, `targetBodyFat` 294, `strengthFactor` 140 (12 sesiones/mes = 1).
@@ -397,7 +399,7 @@ mediana por familia, factor Huber y produce `avg`/`min`/`max`, `fatMass`, `leanM
 | `nutrition.ts` (345) | `dailyNutrition` 66, `weeklyNutritionStats` 143 (solo días registrados), `nutritionDigest` 163 (avisos de proteína/fibra/agua/adherencia), `nutritionStreak` 328. |
 | `wellness.ts` (403) | `reduceHabits` 54, `reduceHabitLogs` 90, `reduceMoods` 106, `isHabitDue` 138, `wellnessDigest` 182, `habitStreaks` 263 (366 días), `autoSummary` 304 (≤5 palabras), `defaultHabits` 341. |
 | `recipes.ts` (486) | `RECIPES` 57 (12 recetas bilingües), `recipeMacros` 374, `recommendRecipes` 414 (score por objetivo y macros restantes), `recipeLogItems` 464. |
-| `zones.ts` (253) | `ZONES` 27 (10 zonas con `weeklySets`, `weeklyMinutes`, `recoveryHours`), `zoneForExercise` 240 (zone guardada → tipo → `KEYWORDS`), `zoneColor` 251. |
+| `zones.ts` (249) | `ZONES` 27 (10 zonas con `weeklySets`, `weeklyMinutes`, `recoveryHours`), `zoneForExercise` 240 (zone guardada → tipo → `KEYWORDS`), `zoneColor` 251. |
 
 ### 4.4 Alimentos y códigos de barras
 
@@ -417,23 +419,25 @@ mediana por familia, factor Huber y produce `avg`/`min`/`max`, `fatMass`, `leanM
 
 ### 5.1 `App.tsx` — shell y estado global
 
-- `View` 35 (`panel|training|history|body|wellness`), `NAV` 38, estado `view` 69.
-- Callbacks: `notify` 81 (toast), `refresh` 87, `chooseVault` 246, `createBackup` 267,
-  `removeBackups` 299, `restoreCopy` 323, `seedSample` 381 (solo navegador).
-- Efectos: carga inicial 124, refresh 136, eventos 140/148, backups 163/186/203/217,
-  `unhandledrejection` → toast 236.
-- `PanelView` recibe `onNavigate` para «Ver todo» (1230/1307). Ajustes en 617-976:
-  tema, acento, idioma, `UpdatePanel` (763) y backups `longlife`.
+- `View` 35 (`panel|training|history|body|wellness`), `NAV` 38 (panel, training, body, wellness, history), estado `view` 69.
+- Ajustes: `SettingsTab` 37, `SETTINGS_TABS` 40, estado `settingsTab` 81 (persistido en
+  `localStorage["bt.settings.tab"]`), navegación por teclado `onSettingsTabKeyDown` 102,
+  barra de pestañas 668-705 y paneles 706-1046 (`appearance|vault|backups|updates|about`).
+- Callbacks: `notify` 95 (toast), `refresh` 119, `chooseVault` 278, `createBackup` 299,
+  `removeBackups` 331, `restoreCopy` 355, `seedSample` 413 (solo navegador).
+- Efectos: carga/refresh 156-249, backups 195/218/235, `unhandledrejection` → toast 268.
+- `PanelView` recibe `onNavigate` para «Ver todo» (1230/1307). Ajustes en 649-1057:
+  apariencia/idioma, bóveda, copias `longlife`, `UpdatePanel` (1003) y «Acerca de».
 
 ### 5.2 Vistas
 
 | Vista | Archivo | Pestañas / estado propio |
 | :--- | :--- | :--- |
-| Panel | `PanelView.tsx` (1392) | `PANEL_TABS` 75 (`summary|body|nutrition|reminders`); `useProjectionInputs` 130; deriva `macros`, `comp`, `projection` 154-160. |
-| Entrenamiento | `TrainingView.tsx` (1695) | `TABS` 61 (`library|routines|plan|session|calendar|progress`); `LibraryTab` 160, `RoutinesTab` 440, `ExercisePicker` 750, `PlanTab` 806, `SessionTab` 1016, `ProgressTab` 1420. |
-| Historial | `HistoryView.tsx` (718) | `tab` (`training|nutrition`), `filter`, `visibleCount` 56 (ventana con «Mostrar más»). |
-| Figura corporal | `BodyView.tsx` (722) | `form` 44; `BodyFigure`, `FatTrend` 216, `ProjectionInputs/Curve/Weights`. |
-| Hábitos | `WellnessView.tsx` (585) | `form`, `mood`, `summary`; usa `wellness.ts` y `defaultHabits`. |
+| Alimentación | `PanelView.tsx` (812) | `PANEL_TABS` (`ingesta|agua|recetas`; se retiraron Resumen, Cuerpo y Recordatorios); `useProjectionInputs` 130; deriva `macros`, `comp`, `projection` 154-160. |
+| Entrenamiento | `TrainingView.tsx` (1791) | `TABS` 63 (`library|routines|plan|session|calendar|progress`); `LibraryTab` 155 (alta/edición con descripción y vídeo), `RoutinesTab` 537, `ExercisePicker` 847, `PlanTab` 903, `SessionTab` 1113, `ProgressTab` 1516. |
+| Historial | `HistoryView.tsx` (722) | `tab` (`training|nutrition`), `filter`, `visibleCount` 56 (ventana con «Mostrar más»). |
+| Figura corporal | `BodyView.tsx` (824) | `BODY_TABS` (`datos|composicion|proyeccion`), registro rápido de peso, Medidas arriba y glosarios. | `form` 44; `BodyFigure`, `FatTrend` 216, `ProjectionInputs/Curve/Weights`. |
+| Hábitos | `WellnessView.tsx` (715) | `kind` (good/strong/addictive/bad), puntos con signo, rachas y recordatorios migrados; `form`, `mood`, `summary`; usa `wellness.ts` y `defaultHabits`. |
 
 ### 5.3 Componentes compartidos
 
@@ -469,16 +473,21 @@ mediana por familia, factor Huber y produce `avg`/`min`/`max`, `fatMass`, `leanM
   `data-theme`/`data-accent` y actualiza `<meta name="theme-color">` desde `--bg`.
 - Se aplica al importar el módulo (71-73) y en `ThemeProvider` (89); `useTheme` 106.
 
-### 6.3 `src/styles.css` (3975)
+### 6.3 `src/styles.css` (4120)
 
-- `:root` 1-58: tokens `--bg`, `--surface*` (1-4), `--primary*` (incl. `-rgb`, `-deep`),
-  `--on-surface*`, `--outline*`, `--error/success/warning/info`, radios `--radius-*`, sombras.
-- `:root[data-accent='…']` 60-333 y `:root[data-theme='light'][data-accent='…']` 377-493:
+- `:root` 1-52: tokens `--bg`, `--surface*` (1-4), `--primary*` (incl. `-rgb`, `-deep`),
+  `--on-surface*`, `--outline*`, `--error/success/warning/info`, radios `--radius-*` y
+  `--box-border`/`--box-border-strong` (derivados de `--primary-rgb`). **No hay
+  `box-shadow`**: la UI es plana, el foco usa `outline` y las cajas usan `--box-border`.
+- `:root[data-accent='…']` 54-327 y `:root[data-theme='light'][data-accent='…']` 377-492:
   9 acentos × 2 modos; el acento tiñe también fondos y superficies.
-- `:root[data-theme='light']` 336-375: paleta clara. Ajustes finales 3927-3965.
+- `:root[data-theme='light']` 336-373: paleta clara (también redefine `--box-border`).
+  Ajustes finales 3979-4017.
 - Convenciones: `.app-shell`, `.sidebar`, `.topbar`, `.content`, `.page`, `.card`, `.grid`,
   `.metric`, `.badge`, `.notice`, `.segmented`, `.tabs`, `.modal-backdrop`, `.toast`, `.chip`.
-- Responsive: media queries desde 2400; `.bottom-nav` visible en móvil (3530).
+- Ajustes con pestañas: `.settings-body`, `.settings-tabs`, `.settings-tab`,
+  `.settings-panels`, `.settings-tab-panel[hidden]` (junto a `.modal-body`, ≈ 2148).
+- Responsive: media queries desde 2457; `.bottom-nav` visible en móvil (3585).
 
 ---
 
@@ -488,10 +497,10 @@ mediana por familia, factor Huber y produce `avg`/`min`/`max`, `fatMass`, `leanM
 | :--- | :--- | :--- |
 | Bóveda TS | `vault.ts` | `isTauri` 13, `VaultInfo` 40, `getVaultInfo` 90, `selectVault` 103, backups 121-153, `getDeviceId` 155, `listEvents` 160, `appendEvent` 173, `getAppInfo` 184, `lookupBarcode` 202, `newEvent` 289. |
 | Actualizaciones | `updater.ts` | `UPDATE_MANIFEST_URL` 22, `watchUpdateProgress` 75, `checkForUpdate` 161, `installUpdate` 207, `isNewerVersion` 419; oculta el panel en Snap/Flatpak/Store. |
-| Enlaces | `links.ts` | `REPOSITORY_URL` 4, `openExternal` 13 (HTTPS; usa `open_external` en Tauri). |
+| Enlaces | `links.ts` (42) | `REPOSITORY_URL` 4, `openExternal` 12, `isExerciseVideoUrl` 35 (HTTPS; usa `open_external` en Tauri). |
 | Guardia de entrada | `inputGuard.ts` | `installInputGuard` 17: solo texto plano al pegar, bloqueo de drop/contexto. |
 | Errores | `errors.ts` | `errorText` 6 normaliza errores opacos de Tauri. |
-| Entradas de proyección | `projectionInputs.ts` | `useProjectionInputs` 59 persiste `training.frequency`, `steps.average`, `intake.average`. |
+| Entradas de proyección | `projectionInputs.ts` | `useProjectionInputs` persiste `training.frequency`, `steps.average`, `intake.average` e `intake.auto` (≥5 días → media). |
 
 ---
 
@@ -507,28 +516,29 @@ mediana por familia, factor Huber y produce `avg`/`min`/`max`, `fatMass`, `leanM
 - `main.rs`: `--version`/`-V` (7-11) y `configure_webkit_rendering` (33-65), que desactiva
   DMA-BUF en NVIDIA/VM/render por software para evitar crashes en WebKitGTK.
 
-### 8.2 Los 22 comandos registrados
+### 8.2 Los 18 comandos registrados
 
 | Comando | Definición | Dominio |
 | :--- | :--- | :--- |
-| `get_app_info` / `get_app_version` / `get_version_info` / `get_build_info` | `commands.rs:729/734/739/744` | Versión embebida (`AppInfo`). |
-| `get_version` | `commands.rs:749` | Cadena de versión. |
-| `frontend_ready` | `commands.rs:754` | Splash → main. |
-| `open_external` | `commands.rs:694` | Enlaces whitelist. |
-| `get_device_id` | `commands.rs:765` | UUID persistido. |
-| `list_events` / `append_event` | `commands.rs:770/777` | Bóveda (`spawn_blocking`). |
-| `fetch_update_manifest` | `commands.rs:165` | `latest.json`. |
-| `download_and_install_linux_package` | `commands.rs:421` | `.deb`/`.rpm` + SHA-256 + minisign. |
-| `open_update_file` | `commands.rs:497` | Solo la última ruta descargada. |
-| `download_android_apk` | `commands.rs:547` | APK → Descargas. |
-| `select_vault` / `get_vault_info` / `get_vault_path` | `vault.rs:306/364/369` | Selección de bóveda (SAF/diálogo). |
-| `vault_backup_status` / `vault_run_backup` / `vault_restore_snapshot` / `vault_delete_backups` | `vault.rs:1191/1228/1336/1425` | Copias `longlife`. |
-| `lookup_barcode` | `barcode.rs:18` | Open Food Facts. |
+| `get_app_info` | `commands.rs:730` | Único comando de versión (`AppInfo`); se eliminaron 4 alias. |
+| `frontend_ready` | `commands.rs:735` | Splash → main. |
+| `open_external` | `commands.rs:695` | Repositorio + vídeos de ejercicios (whitelist). |
+| `lookup_barcode` / `search_foods_remote` | `barcode.rs:19/100` | Open Food Facts por código o palabras clave. |
+| `get_device_id` | `commands.rs:746` | UUID persistido. |
+| `list_events` / `append_event` | `commands.rs:751/758` | Bóveda (`spawn_blocking`). |
+| `fetch_update_manifest` | `commands.rs:166` | `latest.json`. |
+| `download_and_install_linux_package` | `commands.rs:422` | `.deb`/`.rpm` + SHA-256 + minisign. |
+| `open_update_file` | `commands.rs:498` | Solo la última ruta descargada. |
+| `download_android_apk` | `commands.rs:548` | APK → Descargas. |
+| `select_vault` / `get_vault_info` | `vault.rs:307/365` | Selección de bóveda (SAF/diálogo). |
+| `vault_backup_status` / `vault_run_backup` / `vault_restore_snapshot` / `vault_delete_backups` | `vault.rs:1185/1222/1330/1419` | Copias `longlife`. |
+| `lookup_barcode` | `barcode.rs:19` | Open Food Facts. |
 
 ### 8.3 Seguridad y actualizaciones (`commands.rs`)
 
 - Whitelist: `validate_release_url` 65, `validate_sha256` 75, `validate_external_url` 703
-  (solo `github.com/wulflo/BetterTracker`, `/releases` y `/blob/main/PRIVACY_POLICY.md`).
+  (repositorio `github.com/wulflo/BetterTracker`, `/releases`, `/blob/main/PRIVACY_POLICY.md`
+  y hosts de vídeo permitidos: YouTube/youtu.be/Vimeo, solo HTTPS y sin `..`).
 - Descarga: `stream_to_file` 212-296 con límite de tamaño, hash SHA-256 progresivo y eventos
   `update-progress` cada 512 KB.
 - Firma: `verify_package_signature_with_key` 106-160 con `minisign-verify` en bloques de 1 MiB;
@@ -601,7 +611,7 @@ mediana por familia, factor Huber y produce `avg`/`min`/`max`, `fatMass`, `leanM
 
 ### 10.2 Versión y firma
 
-- `VERSION = 0.10.2`, `VAULT_SCHEMA_VERSION = 1`; `scripts/sync-version.mjs` propaga la
+- `VERSION = 0.10.4`, `VAULT_SCHEMA_VERSION = 1`; `scripts/sync-version.mjs` propaga la
   versión a `package.json`, `tauri.conf.json`, `Cargo.toml`, `Cargo.lock`,
   `package-lock.json`, `snapcraft.yaml`, metainfo Flatpak y `tauri.properties` Android
   (`versionCode = major·1.000.000 + minor·1.000 + patch`).
@@ -678,8 +688,10 @@ versiones y SHAs de actions; no tocan lógica de la app.
 | Carga semanal, PR y alertas | `[D] metrics.ts trainingSummary` (526), `estimateTraining` (669), `trainingAlerts` (733) |
 | Grasa corporal (13 ecuaciones) | `[D] metrics.ts bodyComposition` (1759) |
 | FFMI / military (DoDI 1308.03) | `[D] metrics.ts:2050-2082`, `docs/METODOLOGIA.md` |
+| Intervalo de proyección | `[D] bodyRange.ts` (`weightLow/High` = p5–p95, `unreachedScenarios`); la TDEE del balance usa `dailyBreakdown.tdee`, no `macros.tdee`. |
+| Edad y sexo | `[D] energy.ts` (`bmrAgeAdjusted`), `metrics.ts` (`ageFamilyFactor`), `bodyRange.ts` (`ageLeanFactor`, `ageGainFactor`). |
 | Curva de proyección e intervalo 90 % | `[D] bodyRange.ts projectBody` (805) + `integrateOnce` (497) + Monte Carlo (716) → `[F] ProjectionCurve/ProjectionWeights` |
-| Silueta editable | `[F] BodyFigure.tsx:62` (`dragging` 71) |
+| Silueta editable | `[F] BodyFigure.tsx` (`dragging`, `NODES`, `limb`, `limitsFor`) |
 
 ### 12.3 Nutrición y hábitos
 

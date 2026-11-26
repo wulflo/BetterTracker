@@ -65,9 +65,9 @@ La ecuación femenina requiere brazo, antebrazo, cuello, abdomen y muslo.
 
 ### Consenso y confianza
 
-- Cada método aporta un **error estándar publicado (SEE)**. La fiabilidad se deriva de él como `1 − (SEE − 3)/6`, limitada a `0.45–0.98`, y se eleva al cuadrado para el peso. La ponderación por varianza inversa usa w_base = (1/SEE²)·(1 + 0,05·max(0, inputs − 2)); la mediana ponderada inicial y una desviación estándar robusta (MAD × 1,4826, suelo del 1,5 % de la mediana) definen la región normal, y el factor de amortiguación tipo Huber h_i = min(1, 1,5σ/|v_i − mediana|) atenúa ecuaciones atípicas sin eliminarlas del desglose.
+- Cada método aporta un **error estándar publicado (SEE)**. La fiabilidad se deriva de él como `1 − (SEE − 3)/6`, limitada a `0.45–0.98`, y solo alimenta la confianza; el peso de cada método usa directamente `1/SEE²`. La ponderación por varianza inversa usa w_base = (1/SEE²)·(1 + 0,05·max(0, inputs − 2)); la mediana ponderada inicial y una desviación estándar robusta (MAD × 1,4826, suelo del 1,5 % de la mediana) definen la región normal, y el factor de amortiguación tipo Huber h_i = min(1, 1,5σ/|v_i − mediana|) atenúa ecuaciones atípicas sin eliminarlas del desglose.
 - Los métodos se agrupan por **familia de medidas** (abdominal, cintura-cadera, cintura-altura, IMC y multi-sitio). Cada familia aporta como máximo el peso medio de sus métodos, de modo que varias ecuaciones abdominales correlacionadas no eclipsan a las de IMC o multi-sitio.
-- El valor mostrado es la media ponderada por esos pesos; el rango va del mínimo al máximo de los métodos disponibles.
+- El valor mostrado es la media ponderada por esos pesos; el rango va del mínimo al máximo de los métodos disponibles. **Heurística por edad**: las ecuaciones de IMC bajan su peso a 0,6 en menores de 18 y a 0,75 en mayores de 65 (donde la sarcopenia hace que el IMC refleje peor la grasa); en ≥65 las ecuaciones multi-sitio suben a 1,15. Es una decisión de precisión, no una ecuación publicada.
 - La **confianza** (15–95%) combina la fiabilidad media, la cobertura de medidas, el acuerdo entre métodos y su número.
 - La **cobertura** solo cuenta medidas que alguna ecuación puede aprovechar para ese sexo. Pecho y pantorrilla siguen en la silueta, pero no aumentan la cobertura porque ninguna ecuación de grasa los usa.
 - Si falta el abdomen al ombligo, las ecuaciones que lo necesitan usan la cintura como aproximación; si falta la cintura, usan el abdomen.
@@ -83,7 +83,7 @@ La ecuación femenina requiere brazo, antebrazo, cuello, abdomen y muslo.
 
 - **FFMI**: `leanMass / (altura/100)²`; **FFMI normalizado**: `FFMI + 6,1·(1,8 − altura/100)`.
 - **Rango operativo USARIEM** (Potter, Looney & Friedl, 2022–2025): hombres 18,1–23,0 kg/m² (reserva magra baja ≤ 17,7, hipertrofia alta > 23,0); mujeres 15,5–18,3 (≤ 14,5, > 18,3).
-- **Estándar DoDI 1308.03**: la razón cintura/altura (`whtr`: óptimo < 0,50, moderado 0,50–0,55, elevado > 0,55) y el límite de % grasa por grupo de edad (17–20, 21–27, 28–39, 40+) y sexo (18–26 % hombres, 26–36 % mujeres); se marca `muscularOverride: true` cuando `bmi ≥ 25` pero `whtr < 0,50` y el % grasa está dentro del estándar militar.
+- **Estándar DoDI 1308.03**: la razón cintura/altura (`whtr`: óptimo < 0,50, moderado 0,50–0,55, elevado > 0,55) y el límite de % grasa por sexo (18–26 % hombres, 26–36 % mujeres). El grupo de edad se calcula para mostrarlo, pero **no modifica el límite**: el código no aplica los rangos 17–20/21–27/28–39/40+ al % grasa. Se marca `muscularOverride: true` cuando `bmi ≥ 25` pero `whtr < 0,50` y el % grasa está dentro del estándar.
 
 ## Gasto energético y macros
 
@@ -91,7 +91,8 @@ La ecuación femenina requiere brazo, antebrazo, cuello, abdomen y muslo.
 - BMR Katch-McArdle: `370 + 21.6·masa magra`.
 - BMR Cunningham: `500 + 22·masa magra`.
 - **Modelo energético continuo** (`computeEnergyExpenditure`): `TDEE = BMR + TEF + NEAT + EAT`:
-  - **BMR dinámico**: promedio ponderado entre Katch-McArdle/Cunningham (cuando hay masa magra estimada) y Mifflin-St Jeor (sin ella); se recalculan cada día de la proyección con `L(t)` y `F(t)`.
+  - **BMR dinámico**: media simple de Katch-McArdle y Cunningham cuando hay masa magra estimada; Mifflin-St Jeor solo cuando no la hay. El BMR se recalcula cada día con `L(t)`; NEAT y EAT usan `W(t) = F(t) + L(t)`.
+  - **BMR por franja de edad** (`bmrAgeAdjusted`): 10–17 años usa Schofield 1985 (`17,686·W+658,2` hombres; `13,384·W+692,6` mujeres, kcal/d); ≥65 años usa Porter et al. 2023 (modelo 6, en kJ/d ÷ 4,184, con peso, altura, edad y sexo). Entre 18 y 64 se mantienen Katch/Cunningham. Las ecuaciones pediátricas y de mayores se muestran en las notas de la app.
   - **TEF (efecto térmico de los alimentos)**: `0.10 × I` (10 % de la ingesta calórica media).
   - **NEAT continuo**: el PAL declarado ya incluye caminar, así que los pasos no se suman otra vez. Se usa `NEAT = máx((PAL − 1) × BMR, pasos)`, con el factor PAL por nivel (`sedentary: 1,15`, `light: 1,22`, `moderate: 1,30`, `high: 1,38`, `very_high: 1,46`, `auto: 1,20`) y `kcal_pasos(t) = (avgSteps / 1000) × 0.45 × W(t)` (≈0,5 kcal/kg/km; sin escalones: 6200 y 7800 pasos generan gastos distintos y proporcionales).
   - **EAT continuo**: por ritmo semanal de entrenamiento, con `estimateTraining(summary, declaredPerWeek)`; por sesión `min/sesión × MET × W(t)` (≈4,5 MET en fuerza, ≈6,5 en cardio/mixto) y promediado diariamente (sesiones/sem ÷ 7).
@@ -99,7 +100,7 @@ La ecuación femenina requiere brazo, antebrazo, cuello, abdomen y muslo.
 - **Duración media**: sale de las sesiones registradas; solo se asumen 45 min cuando no hay ninguna. La **fuerza mensual** se estima con la proporción de sesiones de fuerza entre las registradas y, sin registros, se asumen de fuerza las sesiones declaradas.
 - **Pasos diarios medios**: actúan como suelo del NEAT: `máx((PAL − 1) × BMR, (pasos/1000) × 0,45 × peso)`. No se suman al PAL para no duplicar el gasto de caminar.
 - **Ingesta media** (`intake.average`): es un dato **manual**, no derivado. La proyección usa ese valor como ingesta del balance y en el TEF; si no existe, usa la media de los días con registro en 28 días (mínimo 3) o el objetivo de calorías. El atajo de la interfaz solo rellena el campo editable.
-- Calorías objetivo: TDEE × `0.85` (definición), `1.10` (volumen) o `1.0` (mantenimiento).
+- Calorías objetivo: TDEE de referencia × `0.85` (definición), `1.10` (volumen) o `1.0` (mantenimiento). La TEF se resuelve con la ingesta final, de modo que `I = base/0,9` es la ingesta de mantenimiento: al comer menos, la TEF también baja y el déficit neto es menor que la diferencia de calorías.
 - Proteína: `2.0 g/kg` en definición, `1.8 g/kg` en el resto.
 - Grasa: máximo entre `0.6 g/kg` y el `24%` de las calorías.
 - Carbohidratos: calorías restantes.
@@ -110,30 +111,30 @@ Si faltan altura, edad o sexo, la app usa valores neutros (170 cm, 30 años, con
 
 ## Proyección de peso y composición
 
-El peso objetivo no se limita al IMC cuando hay composición corporal:
+El objetivo se calcula por composición, pero **el IMC sigue siendo una comprobación de seguridad**: si el IMC actual está fuera del rango orientativo, la app bloquea la proyección y lo explica (esto evita recomendaciones extremas; se muestra el IMC objetivo solo como referencia).
 
 - Se fija la **masa magra objetivo** y se calcula la **masa grasa objetivo** a partir del porcentaje de grasa de referencia para sexo y edad. `peso objetivo = masa magra + masa grasa`.
-- En definición se asume una retención de masa magra del `95%` sin fuerza registrada y del `100%` con ≥12 sesiones de fuerza al mes.
-- En volumen se proyecta hasta un `1,5%` extra de masa magra con fuerza frecuente; sin fuerza, el superávit no se atribuye a músculo.
-- El IMC objetivo se sigue mostrando como referencia, pero no recorta un objetivo que la composición justifica (por ejemplo, en personas con mucha masa muscular).
+- En definición la masa magra objetivo interpola suavemente del `95 %` sin fuerza al `100 %` con ≥12 sesiones/mes (`0,95 + 0,05·factor_de_fuerza`).
+- En volumen se proyecta hasta un `1,5 %` extra de masa magra con fuerza frecuente; sin fuerza no se suma magra extra al objetivo, aunque el integrador reparte ≈25 % del superávit a magra y hasta ≈50 % con fuerza completa.
+- El IMC objetivo se muestra como referencia; la comprobación de seguridad del párrafo anterior se aplica al IMC **actual**, no al objetivo.
 
 La fecha y los hitos futuros salen del **integrador fisiológico diario** (Hall/Forbes + termogénesis adaptativa):
 
 - Estado inicial de dos compartimentos (`F(0)`, `L(0)`) desde `bodyComposition`; sin composición, se asume ≈80 % de masa magra.
 - Cada día (`dt = 1 día`): `TDEE(t) = BMR(t) + TEF + NEAT(t) + EAT(t) − AT(t)`; la pérdida/ganancia se particiona grasa/magra siguiendo la curva de Forbes, donde la fracción magra es `10,4/(F(t) + 10,4)` (acotada al 5–40 % sin fuerza) y se modula por la fuerza mensual:
-  - En déficit, fuerza ≥12 sesiones/mes reduce la fracción de pérdida magra hasta el mínimo fisiológico ≈5–10 %, dirigiendo el 90–95 % del déficit a la grasa.
-  - En superávit, la ganancia de masa magra escala con el estímulo de fuerza (hasta ≈45–55 % del exceso entrenado; ≈20–25 % sin fuerza).
-- **Termogénesis adaptativa**: `dAT/dt = (α·ΔE(t) − AT(t))/τ` con `α ≈ 0,11` (11 % del desbalance `ΔE = I − TDEE`) y `τ = 18 días`, reflejando la adaptación metabólica real en déficit o superávit sostenidos.
-- **Transitorio de glucógeno/agua**: `ΔW_agua(t) = ΔW_max·(1 − e^(−t/4))`, acotado a ±1,8 kg; cada punto de la serie distingue el `scaleWeight` (peso en báscula) del `tissueWeight` (`F(t) + L(t)`).
-- **Intervalo de predicción del 90 %**: Monte Carlo determinista con 81 escenarios (percentiles 5–95) sobre las incertidumbres publicadas: BMR ±10 %, PAL/NEAT ±12 %, ingesta ±10 % manual/objetivo o ±6 % registrada, termogénesis adaptativa α ±50 %, partición Forbes ±20 % y agua ±1,5 kg. Se devuelven `weightLow`, `weightHigh`, hitos con rango y fechas de llegada con rango. Los escenarios no se detienen en el objetivo, así el intervalo describe el peso esperado en la fecha central y no colapsa a un punto.
+  - En déficit, la fracción magra interpola suavemente desde Forbes (5–40 %) hasta el mínimo heurístico del 7,5 % con fuerza completa, dirigiendo el 92,5 % del déficit a la grasa. No hay salto al llegar a 12 sesiones. Se multiplica por un factor de edad heurístico: 1,3 en ≥65 (más pérdida de magra por sarcopenia), 0,85 en <18 (el crecimiento compensa), 1,0 en adultos (Heymsfield 2014).
+  - En superávit, la ganancia de masa magra escala suavemente del 25 % sin fuerza al 50 % con fuerza completa, con factor de edad 0,8 en ≥65 y 1,15 en <18.
+- **Termogénesis adaptativa**: `dAT/dt = (α·ΔE(t) − AT(t))/τ` con `α ≈ 0,11` y `τ = 18 días`. Es una **heurística de suavizado**: Hall (2010) describe el inicio de la adaptación con τ ≈ 7 días y parámetros calibrados en el experimento de Minnesota; la magnitud atribuible a adaptación más allá del cambio de composición es discutida (Thomas 2014, Falkenhain 2025).
+- **Transitorio de glucógeno/agua**: `ΔW_agua(t) = ΔW_max·(1 − e^(−t/4))`, con `ΔW_max = desbalance × 0,0025` acotado a ±1,8 kg (±720 kcal saturan el transitorio); cada punto distingue `scaleWeight` de `tissueWeight` (`F(t)+L(t)`).
+- **Intervalo de predicción del 90 %**: Monte Carlo determinista con 81 escenarios y percentiles 5–95. Las perturbaciones son desviaciones típicas acotadas: BMR σ=0,06, NEAT σ=0,075, ingesta σ=0,10 manual / 0,06 registrada / 0,08 objetivo, AT σ=0,30, partición σ=0,10 y agua σ=0,75 kg. `weightLow`/`weightHigh` y los rangos de los hitos son **literalmente p5–p95** (no se ensanchan con el valor central). Los escenarios que no alcanzan un hito se cuentan en `unreachedScenarios` y no se inventan como llegadas al horizonte máximo.
 - El déficit/superávit sale de la ingesta media frente al TDEE simulado: un déficit de 500 kcal y uno de 800 kcal no producen el mismo ritmo, y al perder peso el gasto baja y el ritmo se frena.
 - El ritmo semanal está limitado por seguridad según el peso y la fuerza mensual:
-  - Definición: `0,75–1,0 %` del peso por semana según la fuerza mensual (0–12 sesiones).
-  - Volumen: `0,25–0,5 %` del peso por semana según la fuerza mensual.
+  - Definición: `0,75–1,0 %` del **peso simulado de cada día** por semana según la fuerza mensual, reducido a 0,75× en ≥65 y 0,85× en <18.
+  - Volumen: `0,25–0,5 %` del peso simulado según la fuerza mensual, con los mismos factores de edad.
 - El indicador de fuerza es el número de días distintos con al menos un ejercicio de tipo `fuerza` en los últimos 30 días.
-- En definición se descuenta la parte del peso perdido que podría ser masa magra con la curva de Forbes (`10,4/(F + 10,4)`): sin fuerza, entre el `60 %` y el `95 %` del cambio es grasa según la masa grasa disponible (la fracción magra se acota al 5–40 %); con fuerza frecuente (≥12 sesiones/mes), la pérdida magra baja a ≈5–10 %. Por eso la misma pérdida de grasa requiere más tiempo cuando no se entrena fuerza.
+- En definición se descuenta la parte del peso perdido que podría ser masa magra con la curva de Forbes (`10,4/(F + 10,4)`): sin fuerza, entre el `60 %` y el `95 %` del cambio es grasa según la masa grasa disponible (fracción magra acotada al 5–40 %); con fuerza frecuente la pérdida magra baja suavemente hasta ≈7,5 %. Por eso la misma pérdida de grasa requiere más tiempo cuando no se entrena fuerza.
 - Los pasos medios, la actividad y los minutos de entrenamiento cambian el TDEE, y con ello el déficit/superávit y las fechas de los hitos.
-- La app avisa cuando la ingesta queda por debajo de la TMB, el déficit supera ~30 % del TDEE, el superávit alcanza el 20 % del TDEE o el ritmo debe recortarse por seguridad.
+- La app avisa cuando la ingesta queda por debajo de la TMB, el déficit alcanza el 30 % del TDEE resuelto, el superávit alcanza el 20 % del TDEE o el ritmo debe recortarse por seguridad.
 - Las fechas de los hitos y de llegada incluyen siempre el año; las duraciones largas se muestran en meses o años en lugar de semanas sueltas.
 
 El **borrado individual** de una sesión, entrenamiento o marca se guarda como evento `training.deleted` con el id del evento y, cuando existe, el id del payload. La bóveda no se reescribe: la fila deja de mostrarse y deja de contar en la proyección y en las alertas.
@@ -185,3 +186,15 @@ Los rangos son heurísticas de programación, no prescripciones individuales.
 - Cunningham, J. J. (1980). A reanalysis of the factors influencing basal metabolic rate in normal adults.
 - Epley, B. (1985). Poundage chart.
 - Brzycki, M. (1993). Strength testing: predicting a one-rep max from reps-to-fatigue.
+- Schofield, W. N. (1985). Predicting basal metabolic rate, new standards and review of previous work. *Hum Nutr Clin Nutr*.
+- Porter, J. et al. (2023). Development and validation of new predictive equations for RMR of older adults ≥65 y. *AJCN* (PMC10447471).
+- Fuchs, R. J. et al. (1978). Body composition prediction from biceps circumference in Air Force males.
+- Brennen, M. L. et al. (1979). Body composition prediction from forearm circumference in Air Force females.
+- Boer, P. (1984). Body composition from weight and height.
+- Forbes, G. B. (1987/2000). Lean body mass–body fat interrelationships in humans.
+- Hall, K. D. (2007). Body fat and fat-free mass interrelationships: Forbes's theory revisited. *Br J Nutr*.
+- Hall, K. D. (2010). Predicting metabolic adaptation, body weight change, and energy intake in humans. *Am J Physiol Endocrinol Metab*.
+- Heymsfield, S. B. et al. (2014). Weight loss composition is one-fourth fat-free mass: a critical review and critique. *Obes Rev*.
+- Thomas, D. et al. (2014). Effect of dietary adherence on the body weight plateau. *AJCN*.
+- Falkenhain, K. et al. (2025). Energy expenditure, metabolic adaptation, physical activity and energy intake following weight loss. *Eur J Clin Nutr*.
+- U.S. Department of Defense (DoDI 1308.03) y Potter/Looney/Friedl (USARIEM), estándares de composición y FFMI.
