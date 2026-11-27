@@ -19,6 +19,18 @@ description: OBLIGATORIA antes de editar cualquier archivo de Better Tracker. Le
 
 El mapa `docs/Estructure.md` fue sincronizado con el código el 2026-11-27: incluye
 índice `BTI1`/deltas, `vault_fingerprint`, 19 comandos, snapshots SAF de un solo
-NDJSON, watchdogs, base neutra de color y saludo `profile.saved`.
+NDJSON, watchdogs, base neutra de color y saludo `profile.saved`. En la misma fecha
+se actualizó `barcode.rs` (§2.2, §8.2, §8.4, §9.2, §12.3): en **Windows**,
+`OFF_SEARCH_ALICIOUS` (`search.openfoodfacts.org/search`) es la vía principal y
+`OFF_SEARCH_ENDPOINTS` queda en 2 hosts legacy de respaldo; Linux/Android conservan
+los 3 originales. `ALICIOUS_FIELDS` pide `nutriments` en la misma respuesta, así
+que una búsqueda cuesta **una sola petición** (antes se leía cada producto);
+`ALICIOUS_PAGE_SIZE = 60` y `alicious_product` normalizan las etiquetas. También se
+documentaron `SEARCH_DEADLINE`/timeout por petición, `SEARCH_CACHE` (600 s) y el
+backoff 30–600 s (sin caché negativa), el fix de scroll de `FoodLog`/`styles.css`,
+`status_detail`/`html_title` para distinguir un 503 de OFF de uno de proxy, el
+segundo cliente `http_client_no_proxy()`, y la feature `system-proxy` de reqwest
+activada explícitamente para igualar la ruta de red de la build de Store y la
+normal. Seguimiento: `~/Descargas/CHECKLIST_WINDOWS_OFF_503.md`.
 
 No se ha borrado ningún dato del usuario (`omega/`, `longlife/`).

@@ -1,5 +1,10 @@
 # Avances recientes
 
+## 0.10.7 (2026-11-27)
+- Búsqueda de alimentos estable en Windows: Search-a-licious es la vía principal y devuelve las macros (`nutriments`) en la misma respuesta, así que una búsqueda cuesta **una petición** en vez de leer cada producto. Los 2 hosts legacy quedan solo como respaldo, con backoff y límite de peticiones.
+- La build de Store activa explícitamente `system-proxy`, igual que la build normal: ambas leen el proxy del registro de Windows. Linux y Android conservan su ruta original.
+- Diagnóstico del 503 documentado (`Server`/`<title>` en el aviso) y skills + índice técnico sincronizados. Sin cambios en `omega`, `longlife`, claves ni actualizador. Detalles en `docs/releases/v0.10.7.md`.
+
 ## 0.10.6 (2026-11-27)
 - Snapshots SAF de un solo `snapshot-events.jsonl`: se eliminó la copia de un archivo por evento, se verifican nombres canónicos y el marcador usa MIME seguro. Listado y restauración sin timeouts; copias antiguas restauran igual.
 - Índice de eventos `BTI1` con journal de deltas y fingerprint para no releer ni parsear lo ya indexado; cuatro locks separados y `backup_status` fuera de ellos.

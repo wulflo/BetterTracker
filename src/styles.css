@@ -3068,7 +3068,14 @@ option {
   gap: 6px;
   max-height: 220px;
   overflow: auto;
+  /* El WebView de Android reajusta el scroll al crecer esta lista; exclude
+     este nodo como ancla de scroll (junto con el JS que restaura la posición). */
+  overflow-anchor: none;
   padding-right: 2px;
+}
+/* Reservar la altura final mientras llega OFF evita el salto del layout. */
+.food-results.is-searching {
+  min-height: 220px;
 }
 
 .food-result-row {
@@ -3964,6 +3971,9 @@ option {
     overflow-x: hidden;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
+    /* En móvil el scroll es de página: sin anclaje, la llegada de resultados
+       no desplaza la interfaz hasta abajo. */
+    overflow-anchor: none;
   }
 
   .app-shell {

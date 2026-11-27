@@ -2,7 +2,7 @@
 
 > **Índice técnico detallado de Better Tracker (Better Fitness Tracker).**
 >
-> Versión del código indexada: **0.10.6** (`VERSION`, `package.json`, `src-tauri/tauri.conf.json`, `VAULT_SCHEMA_VERSION = 1`).
+> Versión del código indexada: **0.10.7** (`VERSION`, `package.json`, `src-tauri/tauri.conf.json`, `VAULT_SCHEMA_VERSION = 1`).
 > Fecha del índice: **2026-11-27**.
 >
 > Este documento **no modifica ni describe cambios en el código**: es solo un mapa de referencia.
@@ -18,7 +18,7 @@
 
 | Notación | Significado |
 | :--- | :--- |
-| `ruta/archivo.tsx:123` | Archivo y línea aproximada donde empieza el símbolo. Las líneas son las de la versión 0.10.6 y pueden moverse con edits posteriores; el **nombre del símbolo** es el dato estable. |
+| `ruta/archivo.tsx:123` | Archivo y línea aproximada donde empieza el símbolo. Las líneas son las de la versión 0.10.7 y pueden moverse con edits posteriores; el **nombre del símbolo** es el dato estable. |
 | `símbolo()` | Función, componente o método exportado. |
 | `#[tauri::command]` | Función Rust expuesta al frontend mediante `invoke("nombre")`. |
 | `LNNN` | Número de línea dentro del archivo que se está describiendo. |
@@ -162,11 +162,11 @@ El frontend usa 19 llamadas `invoke` (13 wrappers en `vault.ts`, 3 en `updater.t
 | `vault_restore_snapshot` | `vault.rs:1898` | `vault.ts:152` → `App.tsx:406` |
 | `get_device_id` | `commands.rs:759` | `vault.ts:168` → `App.tsx:133` |
 | `list_events` | `commands.rs:771` | `vault.ts:163` → `App.tsx refresh` (129) |
-| `search_foods_remote` | `barcode.rs:110` | `vault.ts:221` → `FoodLog.tsx` |
+| `search_foods_remote` | `barcode.rs:422` | `vault.ts:221` → `FoodLog.tsx` |
 | `append_event` | `commands.rs:778` | `vault.ts:176` → todas las vistas |
 | `vault_fingerprint` | `commands.rs:764` | `vault.ts:160` → `App.tsx refresh` (133) |
 | `get_app_info` | `commands.rs:743` | `vault.ts:194` → `App.tsx:125` |
-| `lookup_barcode` | `barcode.rs:41` | `vault.ts:205` → `FoodLog.tsx` |
+| `lookup_barcode` | `barcode.rs:211` | `vault.ts:205` → `FoodLog.tsx` |
 | `open_external` | `commands.rs:695` | `links.ts:17` (HTTPS: repo oficial + vídeos permitidos) |
 | `fetch_update_manifest` | `commands.rs:165` | `updater.ts:282` |
 | `download_and_install_linux_package` | `commands.rs:421` | `updater.ts:241` |
@@ -237,7 +237,7 @@ El progreso llega como evento `update-progress`; la ruta del instalador queda gu
 | `components/Fields.tsx` | 104 | `NumberInput`, `Field`, `EmptyState`, `Stat`. |
 | `components/Icons.tsx` | 188 | Iconos SVG y `LogoMark`. |
 | `components/Charts.tsx` | 456 | `LineChart`, `BarChart`, heatmaps, sparkline, `WeekBars`. |
-| `components/FoodLog.tsx` | 837 | Diario de comidas; búsqueda unificada local + códigos + palabras clave. |
+| `components/FoodLog.tsx` | 864 | Diario de comidas; búsqueda unificada local + códigos + palabras clave. Conserva el scroll cuando llegan resultados remotos (`applyRemoteResults` 191, `useLayoutEffect` 199). |
 | `components/FatTrend.tsx` | 164 | Evolución de grasa/cintura. |
 | `components/RestTimer.tsx` | 202 | Temporizador de descanso. |
 | `components/UpdatePanel.tsx` | 288 | UI de actualizaciones. |
@@ -260,7 +260,7 @@ El progreso llega como evento `update-progress`; la ruta del instalador queda gu
 | `src/main.rs` | 229 | `--version`, ajustes de WebKitGTK en Linux y `run()`. |
 | `src/commands.rs` | 933 | 14 comandos: info, splash, enlaces, eventos y actualizaciones. |
 | `src/vault.rs` | 3449 | 7 comandos: configuración, bóveda, índice de eventos, fingerprint y copias `longlife`. |
-| `src/barcode.rs` | 468 | `lookup_barcode` y `search_foods_remote` contra Open Food Facts (con host alternativo). |
+| `src/barcode.rs` | 977 | `lookup_barcode` y `search_foods_remote` contra Open Food Facts. En **Windows** manda Search-a-licious con `nutriments` en la misma respuesta (una petición por búsqueda), `OFF_SEARCH_ENDPOINTS` queda en 2 hosts legacy de respaldo, con presupuesto de 8 búsquedas/minuto, backoff 30–600 s y timeout por petición; en Linux/Android se conservan los 3 endpoints originales sin cambios. |
 | `src/manifest.rs` | 68 | Parser estricto del `release-manifest.json` (opt-in, no usado en runtime). |
 | `src/version.rs` | 154 | Versión embebida, `AppInfo`, `compare_versions`, formato de instalación. |
 | `build.rs` | ~70 | Inyecta `VERSION`, commit, fecha y `VAULT_SCHEMA_VERSION`. |
@@ -493,7 +493,7 @@ mediana por familia, factor Huber y produce `avg`/`min`/`max`, `fatMass`, `leanM
 | `NumberInput`, `Field`, `EmptyState`, `Stat` | `components/Fields.tsx:3/49/67/88` | Primitivas de formulario. |
 | `Icon`, `LogoMark` | `components/Icons.tsx:151/177` | SVG por nombre. |
 | `LineChart`, `BarChart`, `ProgressBar`, `BodyHeatmap`, `CalendarHeatmap`, `MiniSparkline`, `WeekBars` | `components/Charts.tsx:28/101/140/178/301/427/442` | Todos en SVG; leen tokens de tema. |
-| `FoodLog` | `components/FoodLog.tsx:46` | ~20 estados: búsqueda, unidades, edición, barras. |
+| `FoodLog` | `components/FoodLog.tsx:46` | ~20 estados: búsqueda, unidades, edición, barras; `applyRemoteResults` (191) + `useLayoutEffect` (199) evitan el salto de scroll en Android al llegar OFF. |
 | `FatTrend` | `components/FatTrend.tsx:25` | Usa `bodyProgressSeries`. |
 | `RestTimer` | `components/RestTimer.tsx:65` | `primeTimerAlarm` 23, beep/vibración. |
 | `UpdatePanel` | `components/UpdatePanel.tsx:30` | `onCheck` 57, `onInstall` 78, `onOpenSaved` 125. |
@@ -581,7 +581,7 @@ mediana por familia, factor Huber y produce `avg`/`min`/`max`, `fatMass`, `leanM
 | `get_app_info` | `commands.rs:743` | Único comando de versión (`AppInfo`); se eliminaron 4 alias. |
 | `frontend_ready` | `commands.rs:748` | Splash → main. |
 | `open_external` | `commands.rs:695` | Repositorio + vídeos de ejercicios (whitelist). |
-| `lookup_barcode` / `search_foods_remote` | `barcode.rs:41/110` | Open Food Facts por código o palabras clave. |
+| `lookup_barcode` / `search_foods_remote` | `barcode.rs:211/422` | Open Food Facts por código o palabras clave (Search-a-licious de 1 petición con macros + 2 hosts de respaldo en Windows; 3 en el resto). |
 | `get_device_id` | `commands.rs:759` | UUID persistido. |
 | `list_events` / `append_event` | `commands.rs:771/778` | Bóveda (`spawn_blocking`). |
 | `fetch_update_manifest` | `commands.rs:166` | `latest.json`. |
@@ -607,10 +607,53 @@ mediana por familia, factor Huber y produce `avg`/`min`/`max`, `fatMass`, `leanM
 
 ### 8.4 `barcode.rs`, `manifest.rs` y `version.rs`
 
-- `lookup_barcode` 18: normaliza, prueba variantes UPC/EAN/GTIN (`barcode_variants` 58),
-  timeout 12 s, User-Agent `BetterTracker/<versión>`. `product_for_barcode` 114 normaliza
+- `lookup_barcode` 211: normaliza, prueba variantes UPC/EAN/GTIN (`barcode_variants` 566),
+  timeout 12 s, User-Agent `BetterTracker/<versión>`. `product_for_barcode` 633 normaliza
   nombre, macros por 100 g y categoría; rechaza productos sin macros. Sin caché en Rust:
-  el frontend guarda el resultado como `food.saved`.
+  el frontend guarda el resultado como `food.saved`. El endpoint por código (`api/v2/product`)
+  sigue funcionando aunque la búsqueda por palabras clave esté saturada.
+- `http_client_no_proxy` 190 (solo Windows): segundo cliente con `.no_proxy()`. El
+  normal usa `auto_sys_proxy = true` (reqwest 0.12.28), así que en Windows la salida
+  depende del proxy del sistema; `search_foods_remote` hace una pasada con ese
+  cliente y otra directa, y se queda con la primera que responda. La feature
+  `system-proxy` de reqwest está activada **explícitamente** en `Cargo.toml`:
+  antes la build de Store no activaba `hyper-util/client-proxy-system` (al excluir
+  el updater) y por tanto no leía el proxy del registro de Windows, mientras que
+  la build normal lo heredaba del updater; era la única diferencia de red
+  verificable entre ambas builds. En Linux/Android `ProxyMatcher::system()` solo
+  lee variables de entorno, así que el comportamiento no cambia.
+- `OFF_SEARCH_ALICIOUS` 182 / `alicious_query` 281 / `ALICIOUS_FIELDS` 301 /
+  `ALICIOUS_PAGE_SIZE` 306 / `alicious_product` 312 / `clean_off_tag` 339 /
+  `search_alicious` 357 (solo Windows; compiladas también en tests): buscador
+  oficial `search.openfoodfacts.org/search` que sustituye al legacy `cgi/search.pl`
+  y `api/v2/search` (deprecados, devuelven 503 de forma intermitente).
+  `alicious_query` elimina los metacaracteres de Lucene (`¿leche?` daba 0
+  resultados). `ALICIOUS_FIELDS` incluye `nutriments`, así que la respuesta trae
+  las macros: **una sola petición por búsqueda**, sin `fetch_product_with_timeout`
+  por código. Se piden 60 `hits` porque solo parte del índice tiene macros;
+  `alicious_product` normaliza `brands`/`categories` y solo se conservan los que
+  pasan `product_for_barcode`. `search_foods_remote` 422 lo prueba primero y solo
+  usa los 2 endpoints legacy si falla. Linux/Android conservan la ruta original.
+- `status_detail` 140 / `html_title` 159: ante una respuesta HTTP no exitosa añaden al
+  mensaje la cabecera `Server` y el `<title>` de la página. Así un 503 de OFF
+  (`nginx`, «Page temporarily unavailable - Open Food Facts») se distingue de un 503
+  devuelto por un proxy intermedio. Afecta a `search_foods_remote` y `fetch_product`.
+- `search_foods_remote` 422: `SEARCH_DEADLINE = 20 s` y `SEARCH_CACHE`
+  (600 s / 24 entradas) para aciertos; el mapping es `product_for_barcode` y el frontend
+  guarda el resultado como `food.saved`.
+  - **Solo Windows** (`#[cfg(windows)]`): `OFF_SEARCH_ENDPOINTS` (20) queda reducido a
+    **2** hosts legacy (`world` y `fr`, solo `cgi/search.pl`) como respaldo de
+    Search-a-licious, sin segunda pasada: OFF documenta 10 búsquedas/min/IP y devuelve
+    503 al superarlas, así que multiplicar hosts empeora el bloqueo. Además
+    `take_rate_budget` 80 / `SEARCH_RATE` / `PRODUCT_RATE` aplican un presupuesto de
+    8 búsquedas por minuto (`PRODUCT_RATE` de 12 solo se usa en tests), y
+    `backoff_remaining` 97 / `note_rate_limited`
+    108 / `clear_rate_limit` 121 implementan espera exponencial 30 s → 600 s tras un
+    503/429; `rate_limited_message` 131 explica el límite y cuánto falta. El aviso se
+    muestra en `FoodLog.tsx` vía `errorText`.
+  - **Linux/Android/iOS** (`#[cfg(not(windows))]`): los 3 endpoints originales, dos
+    pasadas con el cliente original y el error original. No se tocó la ruta que ya
+    funcionaba.
 - `manifest.rs`: `parse_manifest` con `deny_unknown_fields`, `select_asset` 35, `is_newer` 47.
   Es opt-in: hoy no se llama desde ningún comando.
 - `version.rs`: `VERSION`/`COMMIT`/`BUILD_DATE` por `env!`, `VAULT_SCHEMA_VERSION` por
@@ -649,8 +692,8 @@ mediana por familia, factor Huber y produce `avg`/`min`/`max`, `fatMass`, `leanM
 
 - `tests/visual/smoke.spec.ts`: un test que carga `/` y falla si hay errores de consola;
   `playwright.config.ts` levanta `npm run dev` en el puerto 1420.
-- Rust: 34 `#[test]` en `main.rs` (2), `manifest.rs` (2), `version.rs` (2), `barcode.rs` (4),
-  `commands.rs` (7) y `vault.rs` (17). CI ejecuta `cargo test`, `clippy -D warnings`,
+- Rust: 53 `#[test]` en `main.rs` (2), `manifest.rs` (2), `version.rs` (2), `barcode.rs` (12),
+  `commands.rs` (7) y `vault.rs` (28). CI ejecuta `cargo test`, `clippy -D warnings`,
   `cargo deny check` y `cargo audit`.
 - `src-tauri/examples/bench_vault.rs`: benchmark manual de serialización de 10.000 eventos.
 
@@ -669,7 +712,7 @@ mediana por familia, factor Huber y produce `avg`/`min`/`max`, `fatMass`, `leanM
 
 ### 10.2 Versión y firma
 
-- `VERSION = 0.10.6`, `VAULT_SCHEMA_VERSION = 1`; `scripts/sync-version.mjs` propaga la
+- `VERSION = 0.10.7`, `VAULT_SCHEMA_VERSION = 1`; `scripts/sync-version.mjs` propaga la
   versión a `package.json`, `tauri.conf.json`, `Cargo.toml`, `Cargo.lock`,
   `package-lock.json`, `snapcraft.yaml`, metainfo Flatpak y `tauri.properties` Android
   (`versionCode = major·1.000.000 + minor·1.000 + patch`).
@@ -760,6 +803,8 @@ versiones y SHAs de actions; no tocan lógica de la app.
 | Diario de comidas | `[F] PanelView` → `components/FoodLog.tsx:46` → `foodDb.ts calcFood/mealTotals` |
 | Borrador diario | `[F] meals.ts loadMealDraft` (49) (`bt.meal.draft.v1`) |
 | Código de barras | `[F] findFoodByBarcode` → `lookupBarcodeCatalog` → `vault.ts lookupBarcode` → `[R] barcode.rs lookup_barcode` |
+| Búsqueda remota por palabras clave | `[F] FoodLog` → `vault.ts searchFoodsRemote` → `[R] barcode.rs search_foods_remote`; Search-a-licious de 1 petición con `nutriments` + 2 hosts de respaldo y límite de 8 búsquedas/minuto **solo en Windows**, 3 hosts originales en Linux/Android |
+| Sin salto de scroll al llegar resultados | `[F] FoodLog applyRemoteResults` (191) + `useLayoutEffect` (199) y `.food-results.is-searching` (`styles.css:3077`), `overflow-anchor: none` |
 | Macros y agua | `[D] metrics.ts computeMacros` (974), `computeWaterGuidance` (1096) |
 | Digest semanal y racha | `[D] nutrition.ts nutritionDigest` (163), `nutritionStreak` (328) |
 | Recetas recomendadas | `[D] recipes.ts recommendRecipes` (414) |

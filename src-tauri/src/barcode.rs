@@ -8,11 +8,28 @@ use std::time::{Duration, Instant};
 /* ------------------------------------------------------------------ */
 
 const OFF_BASE: &str = "https://world.openfoodfacts.org/api/v2/product";
-const OFF_SEARCH: &str = "https://world.openfoodfacts.org/cgi/search.pl";
-/// Segundo host oficial de Open Food Facts: `world` devuelve 503 con frecuencia.
-const OFF_SEARCH_FALLBACK: &str = "https://fr.openfoodfacts.org/cgi/search.pl";
-/// API v2: el `cgi/search.pl` devuelve 503 intermitentemente por sobrecarga.
-const OFF_SEARCH_API: &str = "https://world.openfoodfacts.org/api/v2/search";
+
+/// Servidores oficiales de Open Food Facts para búsqueda por palabras clave.
+///
+/// **Solo Windows.** La búsqueda de texto completo del buscador legacy
+/// (`cgi/search.pl`) devuelve 503 de forma masiva (medido el 2026-11-27: 10 de
+/// 12 peticiones). El reemplazo oficial es Search-a-licious, que se prueba
+/// primero (`OFF_SEARCH_ALICIOUS`); estos dos hosts quedan solo como respaldo,
+/// sin segunda pasada, para no multiplicar peticiones contra el límite de OFF.
+#[cfg(windows)]
+const OFF_SEARCH_ENDPOINTS: &[&str] = &[
+    "https://world.openfoodfacts.org/cgi/search.pl",
+    "https://fr.openfoodfacts.org/cgi/search.pl",
+];
+
+/// Linux, Android e iOS conservan **exactamente** la ruta que ya funcionaba.
+#[cfg(not(windows))]
+const OFF_SEARCH_ENDPOINTS: &[&str] = &[
+    "https://world.openfoodfacts.org/cgi/search.pl",
+    "https://fr.openfoodfacts.org/cgi/search.pl",
+    "https://world.openfoodfacts.org/api/v2/search",
+];
+
 const OFF_FIELDS: &str = "code,product_name,product_name_es,generic_name,brands,nutriments,categories_tags,quantity,serving_size";
 const TIMEOUT: Duration = Duration::from_secs(12);
 const MAX_QUERY_CHARS: usize = 80;
@@ -21,7 +38,6 @@ const SEARCH_CACHE_TTL: Duration = Duration::from_secs(600);
 const SEARCH_CACHE_MAX: usize = 24;
 /// Presupuesto total de la búsqueda, aunque haya varios endpoints y reintentos.
 const SEARCH_DEADLINE: Duration = Duration::from_secs(20);
-
 /// Entrada de la caché de búsqueda: momento en que se guardó y resultados.
 type SearchCacheEntry = (Instant, Vec<Value>);
 type SearchCache = HashMap<String, SearchCacheEntry>;
@@ -29,6 +45,160 @@ type SearchCache = HashMap<String, SearchCacheEntry>;
 /// Caché pequeña y con caducidad: evita repetir la misma búsqueda al teclear
 /// y crece como máximo hasta `SEARCH_CACHE_MAX` entradas.
 static SEARCH_CACHE: OnceLock<Mutex<SearchCache>> = OnceLock::new();
+
+// Límites de OFF documentados (https://openfoodfacts.github.io/openfoodfacts-server/api):
+// 10 búsquedas/min/IP y 15 lecturas de producto/min/IP; al superarlos responde
+// 503 y puede acabar bloqueando la IP. La app aplica un margen y un backoff
+// exponencial para no auto-bloquearse. Solo Windows: en Linux/Android se
+// conserva el comportamiento que ya funcionaba.
+#[cfg(any(windows, test))]
+const SEARCH_RATE_MAX: usize = 8;
+#[cfg(any(windows, test))]
+const PRODUCT_RATE_MAX: usize = 12;
+#[cfg(any(windows, test))]
+const RATE_WINDOW: Duration = Duration::from_secs(60);
+#[cfg(any(windows, test))]
+const BACKOFF_BASE: Duration = Duration::from_secs(30);
+#[cfg(any(windows, test))]
+const BACKOFF_MAX: Duration = Duration::from_secs(600);
+/// Ventana deslizante aproximada: `(inicio, peticiones)`.
+#[cfg(any(windows, test))]
+type RateWindow = (Instant, usize);
+#[cfg(any(windows, test))]
+static SEARCH_RATE: OnceLock<Mutex<RateWindow>> = OnceLock::new();
+#[cfg(any(windows, test))]
+static PRODUCT_RATE: OnceLock<Mutex<RateWindow>> = OnceLock::new();
+/// `(bloqueado hasta, intentos consecutivos)`.
+#[cfg(any(windows, test))]
+type Backoff = (Instant, u32);
+#[cfg(any(windows, test))]
+static SEARCH_BACKOFF: OnceLock<Mutex<Backoff>> = OnceLock::new();
+
+/// Consume una petición del presupuesto. Si se agotó, devuelve los segundos
+/// que faltan para que el llamador avise en vez de insistir contra OFF.
+#[cfg(any(windows, test))]
+fn take_rate_budget(cell: &'static OnceLock<Mutex<RateWindow>>, max: usize) -> Result<(), u64> {
+    let mut guard = cell
+        .get_or_init(|| Mutex::new((Instant::now(), 0)))
+        .lock()
+        .map_err(|_| RATE_WINDOW.as_secs())?;
+    if guard.0.elapsed() >= RATE_WINDOW {
+        *guard = (Instant::now(), 0);
+    }
+    if guard.1 >= max {
+        return Err(RATE_WINDOW.saturating_sub(guard.0.elapsed()).as_secs().max(1));
+    }
+    guard.1 += 1;
+    Ok(())
+}
+
+/// Segundos que quedan de bloqueo, si OFF nos limitó hace poco.
+#[cfg(any(windows, test))]
+fn backoff_remaining() -> Option<u64> {
+    let guard = SEARCH_BACKOFF
+        .get_or_init(|| Mutex::new((Instant::now(), 0)))
+        .lock()
+        .ok()?;
+    let left = guard.0.saturating_duration_since(Instant::now());
+    (!left.is_zero()).then(|| left.as_secs().max(1))
+}
+
+/// Un 503/429 activa una espera exponencial: 30 s, 60 s, 120 s, 240 s (máx. 10 min).
+#[cfg(any(windows, test))]
+fn note_rate_limited() {
+    if let Ok(mut guard) = SEARCH_BACKOFF
+        .get_or_init(|| Mutex::new((Instant::now(), 0)))
+        .lock()
+    {
+        let attempts = guard.1.saturating_add(1);
+        let factor = 1u32 << (attempts.min(4) - 1);
+        let delay = BACKOFF_BASE.saturating_mul(factor).min(BACKOFF_MAX);
+        *guard = (Instant::now() + delay, attempts);
+    }
+}
+
+#[cfg(any(windows, test))]
+fn clear_rate_limit() {
+    if let Ok(mut guard) = SEARCH_BACKOFF
+        .get_or_init(|| Mutex::new((Instant::now(), 0)))
+        .lock()
+    {
+        *guard = (Instant::now(), 0);
+    }
+}
+
+#[cfg(any(windows, test))]
+fn rate_limited_message(wait: u64) -> String {
+    format!(
+        "Open Food Facts limita las consultas anónimas (10 búsquedas o 15 lecturas por minuto) y ha respondido 503. Espera {wait} s antes de reintentar; la búsqueda local sigue disponible."
+    )
+}
+
+/// Un 503 puede venir de Open Food Facts o de un proxy intermedio. La cabecera
+/// `Server` y el `<title>` de la página distinguen al emisor sin volcar HTML ni
+/// trazas al usuario; permite diagnosticar fallos que parecen iguales.
+async fn status_detail(response: reqwest::Response) -> String {
+    let server: String = response
+        .headers()
+        .get(reqwest::header::SERVER)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("")
+        .chars()
+        .take(60)
+        .collect();
+    let body = response.text().await.unwrap_or_default();
+    let title = html_title(&body);
+    match (server.is_empty(), title.is_empty()) {
+        (true, true) => String::new(),
+        (true, false) => format!(" (página: {title})"),
+        (false, true) => format!(" (servidor: {server})"),
+        (false, false) => format!(" (servidor: {server}, página: {title})"),
+    }
+}
+
+fn html_title(body: &str) -> String {
+    let lower = body.to_ascii_lowercase();
+    let Some(start) = lower.find("<title>") else {
+        return String::new();
+    };
+    let start = start + "<title>".len();
+    let Some(end) = lower.get(start..).and_then(|rest| rest.find("</title>")) else {
+        return String::new();
+    };
+    body.get(start..start + end)
+        .map(|title| title.trim().chars().take(80).collect())
+        .unwrap_or_default()
+}
+
+/// API oficial de reemplazo del buscador legacy de OFF (`cgi/search.pl` y
+/// `api/v2/search`), que devuelve 503 de forma intermitente por límite de
+/// peticiones anónimas. Con `fields=...,nutriments,...` trae las macros en la
+/// misma respuesta: una búsqueda completa cuesta una sola petición.
+/// Documentado por OFF: https://openfoodfacts.github.io/openfoodfacts-server/api
+///
+/// Se compila también en tests para poder ejercitarla contra el servicio real
+/// desde Linux; en producción solo existe en Windows.
+#[cfg(any(windows, test))]
+const OFF_SEARCH_ALICIOUS: &str = "https://search.openfoodfacts.org/search";
+
+/// Segundo cliente **solo para Windows**: ignora el proxy del sistema y las
+/// variables `*_PROXY`. La build de Store perdió el proxy del registro por el
+/// entailado de features (ya corregido con la feature `system-proxy`), pero
+/// sigue siendo útil como respaldo: si el proxy configurado devuelve 503 o no
+/// está disponible, esta pasada prueba la conexión directa.
+#[cfg(windows)]
+fn http_client_no_proxy() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .timeout(TIMEOUT)
+        .no_proxy()
+        .user_agent(concat!(
+            "BetterTracker/",
+            env!("CARGO_PKG_VERSION"),
+            " (+https://github.com/wulflo/BetterTracker)"
+        ))
+        .build()
+        .map_err(|e| format!("No se pudo crear el cliente HTTP directo: {e}"))
+}
 
 /**
  * Busca un producto por EAN/UPC en Open Food Facts.
@@ -103,6 +273,149 @@ fn sanitize_search_query(raw: &str) -> Result<String, String> {
     Ok(collapsed)
 }
 
+/// Search-a-licious interpreta `q` como consulta Lucene: `?`, `¿`, `¡`, `:`,
+/// `(`, `)`, `"`, `~`, `^`, `*`, `\`, `/`, `+`, `|` y `&` cambian el sentido o
+/// devuelven 0 resultados (`¿leche?` → 0). Se dejan solo letras, números,
+/// espacios, guiones, guiones bajos y apóstrofos; el resto pasa a espacio.
+#[cfg(any(windows, test))]
+fn alicious_query(query: &str) -> String {
+    query
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c.is_whitespace() || matches!(c, '-' | '_' | '\'') {
+                c
+            } else {
+                ' '
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Campos que se piden a Search-a-licious. Con `fields` la respuesta baja de
+/// cientos de KB a ~8 KB y sigue trayendo `nutriments`, que es lo que evita
+/// leer producto por producto.
+#[cfg(any(windows, test))]
+const ALICIOUS_FIELDS: &str = "code,product_name,product_name_es,generic_name,brands,nutriments,categories,quantity,serving_size";
+
+/// Se piden 60 resultados porque solo una parte del índice tiene macros: con
+/// 60 se obtienen entre 2 y 10 válidos sin una sola petición extra.
+#[cfg(any(windows, test))]
+const ALICIOUS_PAGE_SIZE: usize = 60;
+
+/// Search-a-licious devuelve `brands` y `categories` como arrays de etiquetas
+/// (`xx:hacendado`, `en:rices`), no como el texto y `categories_tags` que
+/// espera `product_for_barcode`. Se normaliza a esa forma.
+#[cfg(any(windows, test))]
+fn alicious_product(hit: &Value) -> Value {
+    let brands = match hit.get("brands") {
+        Some(Value::Array(items)) => items
+            .iter()
+            .filter_map(Value::as_str)
+            .map(clean_off_tag)
+            .filter(|brand| !brand.is_empty())
+            .collect::<Vec<_>>()
+            .join(", "),
+        Some(Value::String(text)) => clean_off_tag(text),
+        _ => String::new(),
+    };
+    json!({
+        "code": hit.get("code").cloned().unwrap_or(Value::Null),
+        "product_name": hit.get("product_name").cloned().unwrap_or(Value::Null),
+        "product_name_es": hit.get("product_name_es").cloned().unwrap_or(Value::Null),
+        "generic_name": hit.get("generic_name").cloned().unwrap_or(Value::Null),
+        "brands": brands,
+        "nutriments": hit.get("nutriments").cloned().unwrap_or(Value::Null),
+        "categories_tags": hit.get("categories").cloned().unwrap_or(Value::Null),
+        "quantity": hit.get("quantity").cloned().unwrap_or(Value::Null),
+        "serving_size": hit.get("serving_size").cloned().unwrap_or(Value::Null),
+    })
+}
+
+/// `xx:el-corte-ingles` → `el corte ingles`.
+#[cfg(any(windows, test))]
+fn clean_off_tag(tag: &str) -> String {
+    tag.split_once(':')
+        .map(|(_, rest)| rest)
+        .unwrap_or(tag)
+        .replace('-', " ")
+        .trim()
+        .to_string()
+}
+
+/// Busca en Search-a-licious (el buscador oficial que sustituye al legacy) y
+/// devuelve el mismo sobre `{ "products": [...] }` que el código existente
+/// espera. `ALICIOUS_FIELDS` pide `nutriments`, `ALICIOUS_PAGE_SIZE = 60`
+/// compensa que solo parte del índice tenga macros y `alicious_product`
+/// normaliza las etiquetas.
+///
+/// Hace **una sola** petición: Search-a-licious ya trae `nutriments`, así que
+/// no se lee cada producto por separado. Antes se gastaban hasta 16 lecturas
+/// contra el límite de 15/min de OFF; ahora una búsqueda completa consume 1.
+#[cfg(any(windows, test))]
+async fn search_alicious(
+    client: &reqwest::Client,
+    query: &str,
+    deadline: Instant,
+) -> Option<Value> {
+    let clean = alicious_query(query);
+    if clean.is_empty() {
+        return None;
+    }
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    if remaining.is_zero() {
+        return None;
+    }
+    let response = client
+        .get(OFF_SEARCH_ALICIOUS)
+        .query(&[
+            ("q", clean.as_str()),
+            ("page_size", &ALICIOUS_PAGE_SIZE.to_string()),
+            ("fields", ALICIOUS_FIELDS),
+        ])
+        .timeout(remaining.min(Duration::from_secs(8)))
+        .send()
+        .await
+        .ok()?;
+    if !response.status().is_success() {
+        // Solo Windows: 503/429 aquí también son el limitador de OFF.
+        #[cfg(windows)]
+        if matches!(response.status().as_u16(), 429 | 503) {
+            note_rate_limited();
+        }
+        return None;
+    }
+    let payload: Value = response.json().await.ok()?;
+    let hits = payload.get("hits")?.as_array()?;
+
+    let mut products = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for hit in hits {
+        if products.len() >= MAX_SEARCH_RESULTS {
+            break;
+        }
+        let code: String = hit
+            .get("code")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .chars()
+            .filter(|c| c.is_ascii_digit())
+            .collect();
+        if code.is_empty() || !seen.insert(code.clone()) {
+            continue;
+        }
+        // Se devuelve el producto crudo normalizado (el mapeo a `per100` lo
+        // hace `search_foods_remote`), pero solo si pasará ese filtro.
+        let product = alicious_product(hit);
+        if product_for_barcode(&product, &code).is_some() {
+            products.push(product);
+        }
+    }
+    (!products.is_empty()).then(|| json!({ "products": products }))
+}
+
 /// Busca alimentos por palabras clave en Open Food Facts. Solo se exponen
 /// nombre, marca y macros; el frontend guarda el elegido como `food.saved`
 /// para usarlo después sin red.
@@ -118,69 +431,164 @@ pub async fn search_foods_remote(query: String) -> Result<Vec<Value>, String> {
             }
         }
     }
+    // Solo Windows: si OFF nos limitó hace poco, no insistir. Insistir es lo
+    // que convierte un 503 puntual en un bloqueo de IP más largo.
+    #[cfg(windows)]
+    if let Some(wait) = backoff_remaining() {
+        return Err(rate_limited_message(wait));
+    }
 
-    let client = http_client()?;
+    // Windows: primera pasada con la configuración de red del sistema y segunda
+    // con conexión directa (sin proxy). El resto mantiene las dos pasadas con
+    // el cliente original: Linux/Android no se tocan.
+    #[cfg(windows)]
+    let clients = [http_client()?, http_client_no_proxy()?];
+    #[cfg(not(windows))]
+    let clients = {
+        let client = http_client()?;
+        [client.clone(), client]
+    };
+
     let started = Instant::now();
     let mut payload: Option<Value> = None;
     let mut last_error = String::new();
     let mut status_error: Option<String> = None;
-    // Solo hosts oficiales escritos en el código: el usuario no controla la URL.
-    // El servicio de búsqueda de OFF devuelve 503 intermitentemente; se prueba
-    // también la API v2 y se hace una segunda pasada antes de rendirse.
-    for _ in 0..2 {
-        for endpoint in [OFF_SEARCH, OFF_SEARCH_FALLBACK, OFF_SEARCH_API] {
-        if started.elapsed() >= SEARCH_DEADLINE {
-            break;
-        }
-        let request = client.get(endpoint).query(&[
-            ("search_terms", query.as_str()),
-            ("json", "1"),
-            ("page_size", &MAX_SEARCH_RESULTS.to_string()),
-            ("fields", OFF_FIELDS),
-        ]);
-        match request.send().await {
-            Ok(response) if response.status().is_success() => {
-                match response.json::<Value>().await {
-                    Ok(value) => {
+    #[cfg(windows)]
+    let mut limited = false;
+
+    // Windows: el buscador legacy de OFF (`cgi/search.pl`) devuelve 503 de
+    // forma masiva (10 de 12 peticiones medidas), así que se prueba primero
+    // Search-a-licious: una sola petición de búsqueda, no seis.
+    #[cfg(windows)]
+    {
+        match take_rate_budget(&SEARCH_RATE, SEARCH_RATE_MAX) {
+            Ok(()) => {
+                let deadline = started + SEARCH_DEADLINE;
+                for client in &clients {
+                    if let Some(value) = search_alicious(client, &query, deadline).await {
                         payload = Some(value);
                         break;
                     }
-                    Err(error) => {
-                        last_error = format!("Respuesta inválida de Open Food Facts: {error}");
+                    // Si ya nos limitó, no probar el segundo cliente.
+                    #[cfg(windows)]
+                    if backoff_remaining().is_some() {
+                        break;
                     }
                 }
             }
-            Ok(response) => {
-                let message = format!(
-                    "Open Food Facts respondió con estado {}.",
-                    response.status()
-                );
-                // Conservar el primer estado HTTP: es la causa real aunque los
-                // reintentos posteriores fallen por red/timeout.
-                if status_error.is_none() {
-                    status_error = Some(message.clone());
-                }
-                last_error = message;
-            }
-            Err(error) => {
-                last_error = format!("No se pudo consultar Open Food Facts: {error}");
-            }
-        }
-        if payload.is_some() {
-            break;
-        }
-        }
-        if payload.is_some() {
-            break;
+            Err(wait) => return Err(rate_limited_message(wait)),
         }
     }
-    let payload = payload.ok_or_else(|| {
-        status_error.or(if last_error.is_empty() {
-            Some("Open Food Facts no devolvió resultados.".to_string())
-        } else {
-            Some(last_error)
-        }).unwrap_or_default()
-    })?;
+
+    // Windows: si Search-a-licious acaba de responder 503/429, no encadenar
+    // cuatro peticiones más al legacy: eso alarga el bloqueo de OFF.
+    #[cfg(windows)]
+    if payload.is_none() {
+        if let Some(wait) = backoff_remaining() {
+            return Err(rate_limited_message(wait));
+        }
+    }
+
+    // Solo hosts oficiales escritos en el código: el usuario no controla la URL.
+    if payload.is_none() {
+        for client in &clients {
+            for &endpoint in OFF_SEARCH_ENDPOINTS {
+                let remaining = SEARCH_DEADLINE.saturating_sub(started.elapsed());
+                if remaining.is_zero() {
+                    break;
+                }
+                // Solo Windows: cada intento de respaldo consume presupuesto;
+                // si se agotó, se deja de llamar en vez de forzar otro 503.
+                #[cfg(windows)]
+                if take_rate_budget(&SEARCH_RATE, SEARCH_RATE_MAX).is_err() {
+                    break;
+                }
+                let request = client.get(endpoint).query(&[
+                    ("search_terms", query.as_str()),
+                    ("json", "1"),
+                    ("page_size", &MAX_SEARCH_RESULTS.to_string()),
+                    ("fields", OFF_FIELDS),
+                ]);
+                // Solo Windows: un timeout suelto de 12 s podía rebasar el
+                // presupuesto global de 20 s y dejar el spinner colgado.
+                #[cfg(windows)]
+                let request = request.timeout(remaining);
+                match request.send().await {
+                    Ok(response) if response.status().is_success() => {
+                        match response.json::<Value>().await {
+                            Ok(value) => {
+                                payload = Some(value);
+                                break;
+                            }
+                            Err(error) => {
+                                last_error =
+                                    format!("Respuesta inválida de Open Food Facts: {error}");
+                            }
+                        }
+                    }
+                    Ok(response) => {
+                        let status = response.status();
+                        // Solo Windows: 503/429 son el limitador de OFF, no un
+                        // fallo de red; activan espera exponencial.
+                        #[cfg(windows)]
+                        if status.as_u16() == 429 || status.as_u16() == 503 {
+                            limited = true;
+                        }
+                        let detail = status_detail(response).await;
+                        let message =
+                            format!("Open Food Facts respondió con estado {status}.{detail}");
+                        // Conservar el primer estado HTTP: es la causa real aunque los
+                        // reintentos posteriores fallen por red/timeout.
+                        if status_error.is_none() {
+                            status_error = Some(message.clone());
+                        }
+                        last_error = message;
+                    }
+                    Err(error) => {
+                        last_error = format!("No se pudo consultar Open Food Facts: {error}");
+                    }
+                }
+                if payload.is_some() {
+                    break;
+                }
+            }
+            if payload.is_some() {
+                break;
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    if limited {
+        note_rate_limited();
+    }
+
+    let payload = match payload {
+        Some(payload) => {
+            #[cfg(windows)]
+            clear_rate_limit();
+            payload
+        }
+        None => {
+            // Solo Windows: un 503/429 se explica como lo que es (límite de
+            // peticiones anónimas) y se recuerda con backoff, en vez de
+            // devolver el estado HTTP crudo.
+            #[cfg(windows)]
+            if limited {
+                return Err(rate_limited_message(
+                    backoff_remaining().unwrap_or(BACKOFF_BASE.as_secs()),
+                ));
+            }
+            let message = status_error.unwrap_or_else(|| {
+                if last_error.is_empty() {
+                    "Open Food Facts no devolvió resultados.".to_string()
+                } else {
+                    last_error
+                }
+            });
+            return Err(message);
+        }
+    };
 
     let mut results = Vec::new();
     let mut seen = std::collections::HashSet::new();
@@ -211,7 +619,7 @@ pub async fn search_foods_remote(query: String) -> Result<Vec<Value>, String> {
                 guard.remove(&key);
             }
         }
-        guard.insert(query, (Instant::now(), results.clone()));
+        guard.insert(query.clone(), (Instant::now(), results.clone()));
     }
     Ok(results)
 }
@@ -242,11 +650,24 @@ fn barcode_variants(code: &str) -> Vec<String> {
 }
 
 async fn fetch_product(client: &reqwest::Client, barcode: &str) -> Result<Option<Value>, String> {
+    fetch_product_with_timeout(client, barcode, None).await
+}
+
+/// Igual que `fetch_product`, pero con un timeout propio cuando la llamada
+/// forma parte de una búsqueda con presupuesto global.
+async fn fetch_product_with_timeout(
+    client: &reqwest::Client,
+    barcode: &str,
+    timeout: Option<Duration>,
+) -> Result<Option<Value>, String> {
     let url = format!(
         "{OFF_BASE}/{barcode}.json?fields=product_name,product_name_es,generic_name,brands,nutriments,categories_tags,quantity,serving_size"
     );
-    let response = client
-        .get(&url)
+    let mut request = client.get(&url);
+    if let Some(timeout) = timeout {
+        request = request.timeout(timeout);
+    }
+    let response = request
         .send()
         .await
         .map_err(|e| format!("No se pudo consultar Open Food Facts: {e}"))?;
@@ -255,10 +676,9 @@ async fn fetch_product(client: &reqwest::Client, barcode: &str) -> Result<Option
         return Ok(None);
     }
     if !response.status().is_success() {
-        return Err(format!(
-            "Open Food Facts respondió con estado {}.",
-            response.status()
-        ));
+        let status = response.status();
+        let detail = status_detail(response).await;
+        return Err(format!("Open Food Facts respondió con estado {status}.{detail}"));
     }
 
     let payload: Value = response
@@ -464,5 +884,95 @@ mod tests {
     fn ignores_products_without_macros() {
         let product = json!({ "product_name": "Agua", "nutriments": {} });
         assert!(product_for_barcode(&product, "012345678905").is_none());
+    }
+
+    #[test]
+    fn extracts_title_from_error_page() {
+        let body = "<html><head><title>Page temporarily unavailable - Open Food Facts</title></head></html>";
+        assert_eq!(
+            html_title(body),
+            "Page temporarily unavailable - Open Food Facts"
+        );
+        assert_eq!(html_title("<html><body>sin título</body></html>"), "");
+    }
+
+    #[test]
+    fn sanitizes_search_a_licious_lucene_query() {
+        assert_eq!(alicious_query("café-con-leche"), "café-con-leche");
+        assert_eq!(alicious_query("¿leche?"), "leche");
+        assert_eq!(alicious_query("a+b|c*d"), "a b c d");
+        assert_eq!(alicious_query("  pollo   asado  "), "pollo asado");
+        assert_eq!(alicious_query("???"), "");
+    }
+
+    /// Prueba real contra el servicio (red): `cargo test -- --ignored`.
+    #[test]
+    #[ignore = "consulta search.openfoodfacts.org; ejecutar con --ignored"]
+    fn live_search_alicious_returns_products_with_macros() {
+        let client = http_client().unwrap();
+        let deadline = Instant::now() + SEARCH_DEADLINE;
+        let payload = tauri::async_runtime::block_on(search_alicious(&client, "leche", deadline))
+            .expect("search-a-licious debe devolver resultados");
+        let products = payload
+            .get("products")
+            .and_then(Value::as_array)
+            .expect("respuesta con products");
+        assert!(!products.is_empty());
+        assert!(products.iter().all(|product| {
+            let code = product.get("code").and_then(Value::as_str).unwrap_or_default();
+            product_for_barcode(product, code).is_some()
+        }));
+    }
+
+    #[test]
+    fn rate_budget_blocks_after_limit_and_reports_wait() {
+        for _ in 0..SEARCH_RATE_MAX {
+            assert!(take_rate_budget(&SEARCH_RATE, SEARCH_RATE_MAX).is_ok());
+        }
+        let wait = take_rate_budget(&SEARCH_RATE, SEARCH_RATE_MAX).unwrap_err();
+        assert!((1..=60).contains(&wait), "espera fuera de rango: {wait}");
+        // El presupuesto de producto es independiente del de búsqueda.
+        assert!(take_rate_budget(&PRODUCT_RATE, PRODUCT_RATE_MAX).is_ok());
+    }
+
+    #[test]
+    fn backoff_grows_after_503_and_resets_on_success() {
+        clear_rate_limit();
+        assert_eq!(backoff_remaining(), None);
+        note_rate_limited();
+        let first = backoff_remaining().expect("debe haber bloqueo tras un 503");
+        assert!((25..=30).contains(&first), "primer backoff: {first}");
+        note_rate_limited();
+        let second = backoff_remaining().expect("debe seguir bloqueado");
+        assert!(second > first, "el backoff debe crecer: {first} -> {second}");
+        clear_rate_limit();
+        assert_eq!(backoff_remaining(), None);
+    }
+
+    #[test]
+    fn rate_limited_message_explains_limit_and_wait() {
+        let message = rate_limited_message(42);
+        assert!(message.contains("42 s"));
+        assert!(message.contains("503"));
+        assert!(message.contains("búsqueda local"));
+    }
+
+    #[test]
+    fn off_search_endpoints_are_official_https() {
+        // Windows: solo quedan dos hosts legacy como respaldo de
+        // Search-a-licious, para no multiplicar peticiones contra el límite.
+        #[cfg(windows)]
+        assert_eq!(OFF_SEARCH_ENDPOINTS.len(), 2);
+        // En Linux/Android se conservan los 3 endpoints originales.
+        #[cfg(not(windows))]
+        assert_eq!(OFF_SEARCH_ENDPOINTS.len(), 3);
+        let mut unique = std::collections::HashSet::new();
+        for endpoint in OFF_SEARCH_ENDPOINTS {
+            assert!(endpoint.starts_with("https://"));
+            assert!(!endpoint.contains(".."));
+            let host = endpoint.split('/').nth(2).unwrap();
+            assert!(host.ends_with(".openfoodfacts.org"));
+            assert!(unique.insert(*endpoint));
+        }
     }
 }

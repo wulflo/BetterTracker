@@ -36,7 +36,16 @@ código de aplicación salvo que te lo pidan explícitamente.
 7. **Red en Rust, no en el webview.** La CSP tiene `connect-src 'none'`; Open Food Facts
    se consulta con `lookup_barcode` (`src-tauri/src/barcode.rs`) y el resultado se
    guarda como evento `food.saved` para usarlo sin red. No añadir `fetch` desde React.
-8. **Métricas simples.** Si el cambio puede afectar rendimiento, comprobar el número de
+   En Windows, la búsqueda por palabras clave usa Search-a-licious con `nutriments`
+   en la misma respuesta: **una petición por búsqueda**, sin leer producto por producto.
+8. **Estabilidad visual al llegar resultados.** Una respuesta remota que inserta
+   filas de golpe no debe desplazar la página: en `FoodLog.tsx`,
+   `applyRemoteResults` (191) guarda `window.scrollY`/`.food-results.scrollTop`
+   antes del `setState` y `useLayoutEffect` (199) los restaura antes del pintado;
+   `.food-results` (con `overflow-anchor: none`) reserva su altura final mientras
+   `remoteBusy` (`.is-searching`). Revisar esto en móvil, donde el scroll es de
+   `body` y el WebView de Android reajusta el anclaje.
+9. **Métricas simples.** Si el cambio puede afectar rendimiento, comprobar el número de
    nodos renderizados y el tiempo de respuesta antes y después con `npm test` y, si
    aplica, el smoke de Playwright (`tests/visual/smoke.spec.ts`).
 
@@ -49,6 +58,7 @@ código de aplicación salvo que te lo pidan explícitamente.
 - [ ] ¿Las agregaciones se memoizan y pasan series reducidas a los gráficos?
 - [ ] ¿La caché tiene límite o caducidad (p. ej. borrador de hoy)?
 - [ ] ¿No se añaden peticiones de red en el frontend (CSP `connect-src 'none'`)?
+- [ ] ¿La llegada de resultados remotos conserva la posición de scroll (móvil/Android)?
 - [ ] ¿`npx tsc --noEmit` y `npm test` pasan?
 
 ## Referencias rápidas

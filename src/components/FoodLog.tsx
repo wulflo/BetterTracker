@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Food, FoodCategory, FoodLogItem, MealSlot } from '../types';
 import {
   calcFood,
@@ -65,6 +65,8 @@ export default function FoodLog({ foods, items, onAdd, onUpdate, onRemove, onCle
   const [remoteBusy, setRemoteBusy] = useState(false);
   const [remoteError, setRemoteError] = useState('');
   const remoteRequest = useRef(0);
+  const resultsListRef = useRef<HTMLDivElement>(null);
+  const scrollSnapshotRef = useRef<{ page: number; list: number } | null>(null);
   // Tras añadir un alimento remoto se rellena el campo con su nombre; sin este
   // guard se lanzaría otra búsqueda y aparecería un 503 aunque el alta ya se
   // guardó correctamente en la bóveda.
@@ -183,6 +185,26 @@ export default function FoodLog({ foods, items, onAdd, onUpdate, onRemove, onCle
 
   const isBarcodeQuery = (value: string): boolean => looksLikeBarcodeInput(value);
 
+  // OFF devuelve los resultados de golpe. En Android el WebView reajusta el
+  // scroll cuando crece el layout, así que guardamos la posición justo antes
+  // del setState y la restauramos antes del siguiente pintado.
+  const applyRemoteResults = (foods: Food[]) => {
+    scrollSnapshotRef.current = {
+      page: window.scrollY,
+      list: resultsListRef.current?.scrollTop ?? 0,
+    };
+    setRemoteResults(foods);
+  };
+
+  useLayoutEffect(() => {
+    const saved = scrollSnapshotRef.current;
+    if (!saved) return;
+    scrollSnapshotRef.current = null;
+    const list = resultsListRef.current;
+    if (list) list.scrollTop = saved.list;
+    if (window.scrollY !== saved.page) window.scrollTo(0, saved.page);
+  }, [remoteResults]);
+
   // Un solo campo: si contiene 6–14 dígitos se trata como código de barras;
   // si no, se buscan alimentos en local y, con debounce, en la nube.
   useEffect(() => {
@@ -222,11 +244,11 @@ export default function FoodLog({ foods, items, onAdd, onUpdate, onRemove, onCle
     const timer = window.setTimeout(() => {
       void searchFoodsRemote(value)
         .then((foods) => {
-          if (request === remoteRequest.current) setRemoteResults(foods);
+          if (request === remoteRequest.current) applyRemoteResults(foods);
         })
         .catch((error: unknown) => {
           if (request === remoteRequest.current) {
-            setRemoteResults([]);
+            applyRemoteResults([]);
             setRemoteError(
               tx(
                 lang,
@@ -493,7 +515,12 @@ export default function FoodLog({ foods, items, onAdd, onUpdate, onRemove, onCle
             <span>{remoteError}</span>
           </div>
         )}
-        <div className="food-results" role="listbox" aria-label={tx(lang, 'Resultados de alimentos', 'Food results')}>
+        <div
+          ref={resultsListRef}
+          className={`food-results ${remoteBusy ? 'is-searching' : ''}`}
+          role="listbox"
+          aria-label={tx(lang, 'Resultados de alimentos', 'Food results')}
+        >
           {results.length === 0 && remoteResults.length === 0 && !remoteBusy ? (
             <div className="food-result-empty">
               {tx(

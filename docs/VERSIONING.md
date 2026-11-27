@@ -68,7 +68,7 @@ Es el manifiesto que lee el plugin updater. Se genera con `scripts/generate-upda
 
 ```json
 {
-  "version": "0.10.6",
+  "version": "0.10.7",
   "notes": "Notas del release",
   "pub_date": "2026-11-25T00:00:00.000Z",
   "platforms": {

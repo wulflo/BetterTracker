@@ -47,7 +47,22 @@ Propósito: **dejar de corregir síntomas uno por uno**. Un fallo en Android cas
 
 - [ ] Toda petición desde Rust; CSP `connect-src 'none'` **no** se relaja (no es la causa de fallos de búsqueda).
 - [ ] reqwest 0.12 + `rustls-tls-webpki-roots` en Android; ninguna dependencia nueva con 0.13 + `rustls` usada para crear clientes propios.
-- [ ] Múltiples endpoints oficiales y reintentos; un 503 del servidor se muestra con su estado real.
+- [ ] **`cfg(not(windows))` se conserva tal cual**: los 3 endpoints originales
+      (`world/cgi`, `fr/cgi`, `world/api/v2`), dos pasadas con el cliente original,
+      sin presupuesto ni backoff y con el mensaje de error original. No
+      «uniformizar» con la ruta de Windows (Search-a-licious + 2 hosts de
+      respaldo): Android/Linux ya funcionaban con esa ruta. La mejora de
+      Search-a-licious (macros en la misma respuesta, **1 petición por búsqueda**)
+      es solo Windows; no trasladarla a `not(windows)` sin una incidencia real.
+- [ ] Antes de atribuir un 503 a una plataforma, repetir el mismo `curl` con el UA
+      de la app desde el PC y **varias veces**: OFF devuelve 503 de forma
+      intermitente (límite por IP y global), así que una sola muestra no prueba
+      nada. El presupuesto de 8 búsquedas/minuto, el backoff 30–600 s y
+      Search-a-licious son **solo Windows** (`#[cfg(windows)]`); en Android no se
+      han tocado. En Windows la feature
+      `system-proxy` de reqwest debe seguir activada (build Store y build normal
+      leen así el proxy del registro) y existe el respaldo directo
+      `http_client_no_proxy()`.
 - [ ] Añadir un alimento remoto **no** depende de que se guarde el alimento en la bóveda: primero se registra la comida.
 - [ ] Cambiar el campo de búsqueda tras añadir no relanza otra petición.
 
@@ -67,6 +82,12 @@ Propósito: **dejar de corregir síntomas uno por uno**. Un fallo en Android cas
 - [ ] Pestañas largas en rejilla de 2 filas en pantallas ≤720 px.
 - [ ] Tipografías 100% tokenizadas (`--fs-*`, `--font-scale`) y ajustables desde Ajustes → Apariencia, persistidas y aplicadas antes del primer pintado.
 - [ ] Textos nuevos siempre en ES y EN (`tx(lang, es, en)`).
+- [ ] **Estabilidad del scroll**: cuando OFF devuelve resultados de golpe, la
+      interfaz no debe irse al final. `FoodLog.applyRemoteResults` (191) guarda
+      `window.scrollY` y `.food-results.scrollTop` antes del `setState` y
+      `useLayoutEffect` (199) los restaura antes del pintado; `.food-results`
+      lleva `overflow-anchor: none` y `.is-searching` reserva 220 px mientras
+      llega la respuesta. Verificar en 390×844 y en dispositivo.
 
 ### 2.5 Tests y verificación
 
