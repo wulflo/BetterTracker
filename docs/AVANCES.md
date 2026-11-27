@@ -1,5 +1,11 @@
 # Avances recientes
 
+## 0.10.6 (2026-11-27)
+- Snapshots SAF de un solo `snapshot-events.jsonl`: se eliminó la copia de un archivo por evento, se verifican nombres canónicos y el marcador usa MIME seguro. Listado y restauración sin timeouts; copias antiguas restauran igual.
+- Índice de eventos `BTI1` con journal de deltas y fingerprint para no releer ni parsear lo ya indexado; cuatro locks separados y `backup_status` fuera de ellos.
+- Base de color neutra con acento puntual, sidebar 220 px con nav tipo botón, topbar integrada, saludo con nombre en vertical, alérgenos en 2 columnas y pestañas que envuelven en móvil.
+- Las vistas se mantienen montadas para no recalcular reducciones al navegar; watchdogs de copia/restauración. Sin cambios en `omega`, claves ni actualizador. Detalles en `docs/releases/v0.10.6.md`.
+
 ## 0.10.5 (2026-11-27)
 - Corregido el error «El manifiesto incluye una firma no válida para una APK de Android» al buscar actualizaciones desde 0.10.2: el generador publica un `signature` no vacío y el cliente acepta el de los manifests antiguos.
 - Nueva guardia de CI (`scripts/check-updater-compat.mjs`) y skill `actualizador-seguro` para que un cambio no vuelva a romper la compatibilidad con clientes ya instalados.
@@ -22,7 +28,7 @@
 - Los `events.jsonl` antiguos se siguen leyendo; todos los eventos se deduplican por `id`.
 - Migración automática en escritorio de `devices/` a `omega/devices/`.
 - Selección de carpeta en Android mediante SAF, con permiso persistente entre reinicios.
-- Aviso si el número de eventos baja respecto al último visto para esa bóveda (posible reversión de FolderSync).
+- Aviso si el número de eventos baja respecto al último visto para esa bóveda (posible reversión por un sincronizador externo).
 - Eliminada por completo la sincronización LAN/P2P: no quedan módulos, comandos ni interfaz.
 
 ## Copias de seguridad
@@ -30,7 +36,7 @@
 - Copia de `omega` al día y por dispositivo en `<bóveda>/longlife/<dispositivo>/<AAAA-MM-DD>`.
 - `snapshot.json` con dispositivo, plataforma, fecha y versión; así el PC identifica las copias creadas en Android.
 - Las copias antiguas en `longlife/<AAAA-MM-DD>` se siguen listando como legado.
-- Retención de las 7 copias más recientes **por dispositivo**.
+- Retención de las 7 copias más recientes **en total** (todos los dispositivos).
 - Marcador `.backup-complete` para detectar y reemplazar copias interrumpidas.
 - Estado, copia manual, listado con fecha/dispositivo/tamaño y **Restaurar** en Ajustes.
 - Restauración no destructiva: importa solo los eventos que faltan en `omega/devices/restored-<copia>-<marca>/`; nunca sobrescribe ni borra eventos.

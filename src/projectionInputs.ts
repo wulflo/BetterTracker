@@ -65,7 +65,8 @@ export interface AutoIntake {
 /** Últimos registros `intake.auto` (un evento por día, el más reciente manda). */
 export function autoIntakeEntries(events: VaultEvent[], today = new Date()): AutoIntakeEntry[] {
   const byDate = new Map<string, AutoIntakeEntry>();
-  for (const event of events) {
+  const chronological = [...events].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  for (const event of chronological) {
     if (event.kind !== 'intake.auto') continue;
     const raw = event.payload as Partial<AutoIntakeEntry> | null;
     if (!raw?.date) continue;
@@ -86,7 +87,8 @@ export function autoIntakeEntries(events: VaultEvent[], today = new Date()): Aut
 
 export function autoIntakeSummary(events: VaultEvent[], today = new Date()): AutoIntake {
   const byDate = new Map<string, { enabled: boolean; kcal: number }>();
-  for (const event of events) {
+  const chronological = [...events].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  for (const event of chronological) {
     if (event.kind !== 'intake.auto') continue;
     const raw = event.payload as { date?: string; enabled?: boolean; kcal?: number } | null;
     if (!raw?.date) continue;

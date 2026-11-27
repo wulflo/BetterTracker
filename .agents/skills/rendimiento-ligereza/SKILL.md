@@ -43,6 +43,10 @@ código de aplicación salvo que te lo pidan explícitamente.
 - [ ] ¿El estado se actualiza en cada pulsación de tecla y dispara reducciones de la
       bóveda completa? Usa valor local + `onBlur`/debounce (~100–150 ms).
 - [ ] ¿Hay `setState` en bucle o guardias ausentes que provoquen renders infinitos?
+- [ ] ¿Las vistas se desmontan al cambiar de sección? `App.tsx` las mantiene montadas en
+      `.view-slot` con `hidden` para conservar `useMemo` (BodyView: 81×1095 días). Medir
+      el cambio de sección en Android con bóveda grande; en navegador con datos de ejemplo
+      dio 27–33 ms.
 
 ### 2.2 CSS / paint (compositor)
 

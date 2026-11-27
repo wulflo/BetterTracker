@@ -5,7 +5,7 @@
   Todo lo que registras se queda en una carpeta que tú eliges. Sin cuentas, sin nube y sin telemetría.</p>
 
   <p>
-    <a href="VERSION"><img src="https://img.shields.io/badge/versi%C3%B3n-0.10.5-4f7cff?style=flat-square" alt="Versión 0.10.5"></a>
+    <a href="VERSION"><img src="https://img.shields.io/badge/versi%C3%B3n-0.10.6-4f7cff?style=flat-square" alt="Versión 0.10.6"></a>
     <a href="https://github.com/wulflo/BetterTracker/actions/workflows/ci.yml"><img src="https://github.com/wulflo/BetterTracker/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/licencia-MIT-2ea44f?style=flat-square" alt="Licencia MIT"></a>
     <img src="https://img.shields.io/badge/plataformas-Linux%20%7C%20Windows%20%7C%20Android-6b7280?style=flat-square" alt="Plataformas">
@@ -22,7 +22,7 @@
     <a href="README.md">English</a>
   </p>
 
-  <p>Versión actual: <strong>0.10.5</strong></p>
+  <p>Versión actual: <strong>0.10.6</strong></p>
 </div>
 
 <img src="docs/screenshots/dashboard.es.png" alt="Alimentación de Better Fitness Tracker con ingesta, macros y agua">
@@ -123,10 +123,10 @@ La interfaz completa está disponible en español e inglés, con selector en Aju
 - No hay cuentas, dependencia de la nube, telemetría ni sincronización LAN/P2P.
 - La bóveda es una carpeta elegida por ti. Todos los datos de la app viven en `<bóveda>/omega`. Cada evento nuevo se guarda como archivo propio (`omega/devices/<id>/events/<event-id>.json`); los `events.jsonl` antiguos se siguen leyendo y se deduplican por `id`.
 - En Android la bóveda se elige con el selector de carpetas del sistema (SAF) y el permiso de lectura/escritura se conserva entre reinicios. Las copias diarias se guardan en `longlife/<dispositivo>/<fecha>`; la heredada `Longlife` se migra al abrir la bóveda (escritorio) y se sigue leyendo como legado hasta que el usuario la renombre en SAF.
-- La app crea una copia de `omega` al día en `<bóveda>/longlife/<dispositivo>/<AAAA-MM-DD>` y conserva las 7 más recientes **de cada dispositivo**, sin tocar las de los demás. Las copias antiguas en `<bóveda>/longlife/<AAAA-MM-DD>` se siguen mostrando como legado.
+- La app crea una copia de `omega` al día en `<bóveda>/longlife/<dispositivo>/<AAAA-MM-DD>` y conserva las 7 más recientes **en total, sumando todos los dispositivos**; las más antiguas se sustituyen. Las copias antiguas en `<bóveda>/longlife/<AAAA-MM-DD>` se siguen mostrando como legado.
 - En **Ajustes → Copias de seguridad** puedes crear una copia, ver la fecha, el dispositivo y el tamaño de cada una, y **restaurar** sin riesgo: solo se importan los eventos que falten en `omega/devices/restored-<copia>-<marca>/`, sin borrar ni sobrescribir nada. Cada copia guarda un manifiesto con archivos y bytes: si una sincronización la deja a medias, aparece como **dañada** y la copia del día se rehace sola.
 - Los ajustes incluyen una acción de alto riesgo para borrar todas las copias de `longlife`. Pide confirmación, no se puede deshacer y la copia diaria no se recrea hasta el día siguiente.
-- Si el número de eventos baja respecto al último visto en esa bóveda, la app avisa: una bóveda append-only no debe decrecer (suele indicar que FolderSync u otro equipo ha revertido archivos). Si sincronizas con FolderSync, usa modo copia incremental del móvil al PC (sin propagar borrados) y nunca subas una copia antigua del PC sobre el móvil.
+- Si el número de eventos baja respecto al último visto en esa bóveda, la app avisa: una bóveda append-only no debe decrecer (suele indicar que un sincronizador externo u otro equipo ha revertido archivos). Si sincronizas con una herramienta externa, usa modo copia incremental del móvil al PC (sin propagar borrados) y nunca subas una copia antigua del PC sobre el móvil.
 - El código de barras se introduce a mano en Ingesta: escribe o pega entre 6 y 14 dígitos y pulsa «Buscar» (o usa un lector USB/Bluetooth que termine en Enter). Los códigos UPC-A/EAN-13/GTIN se prueban en sus variantes (con y sin ceros iniciales, 12/13/14 dígitos) tanto en la app como en Open Food Facts. La app no pide permiso de cámara ni lee imágenes.
 - **No hay cifrado:** la bóveda se guarda como JSON en claro en `<bóveda>/omega` y las copias en `<bóveda>/longlife`. No la sincronices con la nube ni compartas el equipo sin cifrarla tú mismo. No se guardan fotos ni archivos: el pegado se limita a texto plano.
 - Las únicas conexiones de red son la comprobación **manual** de actualizaciones y la consulta opcional a Open Food Facts al buscar un código de barras. El código buscado se envía a `world.openfoodfacts.org`; nada se envía en segundo plano. Las builds de Microsoft Store no incluyen el actualizador y se actualizan desde la Store.

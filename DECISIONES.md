@@ -30,7 +30,7 @@ Tauri 2 + React 18 + TypeScript + Vite. La lógica de archivos y comandos vive e
 ## Almacenamiento
 Bóveda en una carpeta elegida por el usuario. Todos los datos de la app viven en `<bóveda>/omega`; los eventos son append-only. Cada evento nuevo se escribe como archivo propio (`omega/devices/<id>/events/<event-id>.json`) con temporal + rename en escritorio y `create_new_file` en SAF. Los `events.jsonl` antiguos se siguen leyendo para no romper bóvedas existentes y todos los eventos se deduplican por `id` al leer. La reducción es determinista por timestamp; los borrados usan eventos de “limpieza” o lápidas. Sin cifrado activo, sin fotos y sin adjuntos.
 
-Escribir un archivo por evento evita que dos dispositivos (o FolderSync) reescriban el mismo JSONL y se pisen datos: un evento creado en Android nunca puede ser borrado por una versión antigua del archivo que tenga el PC.
+Escribir un archivo por evento evita que dos dispositivos (o un sincronizador externo) reescriban el mismo JSONL y se pisen datos: un evento creado en Android nunca puede ser borrado por una versión antigua del archivo que tenga el PC.
 
 En Android la carpeta se elige con el selector SAF (`tauri-plugin-android-fs`), se concede permiso persistente de lectura/escritura y se guarda la ruta serializada en la configuración de la app. La app no usa `longlife` como fuente de datos: solo lo enumera para mostrar el estado, restaurar o borrar copias.
 
@@ -49,10 +49,10 @@ En Android la carpeta se elige con el selector SAF (`tauri-plugin-android-fs`), 
 - El borrado de todas las copias está en Ajustes como acción de alto riesgo con confirmación. Tras borrarlas, el automatismo no vuelve a crear la copia de ese día; se reanuda al día siguiente. En SAF se borran los archivos recursivamente porque el plugin no expone borrado de directorios; pueden quedar carpetas vacías.
 - Si el número de eventos de una bóveda baja respecto al último valor visto (guardado en `localStorage` por ruta de bóveda), la app muestra un aviso y sugiere restaurar una copia.
 
-### FolderSync
+### Sincronización externa
 - La bóveda completa (incluida `longlife`) puede sincronizarse entre Android y PC.
 - Los conflictos nunca deben resolverse borrando `omega/devices/` ni `longlife/`: los eventos son inmutables y las copias por dispositivo no colisionan.
-- Recomendado: configurar FolderSync como copia incremental del móvil al PC (o desactivar la propagación de borrados). Un modo espejo puede borrar en el PC eventos que ya no existan en el origen, y una copia antigua del PC nunca debe sincronizarse sobre el móvil.
+- Recomendado: configurar un sincronizador externo como copia incremental del móvil al PC (o desactivar la propagación de borrados). Un modo espejo puede borrar en el PC eventos que ya no existan en el origen, y una copia antigua del PC nunca debe sincronizarse sobre el móvil.
 - Si una sincronización antigua revierte la bóveda, la UI detecta la caída de eventos y la restauración recupera solo lo que falte.
 
 Los datos de versiones anteriores en `<bóveda>/devices` se migran una vez a `<bóveda>/omega/devices` al abrir la bóveda en escritorio.

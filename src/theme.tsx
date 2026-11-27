@@ -34,6 +34,25 @@ export const ACCENTS: AccentOption[] = [
 
 const MODE_KEY = 'bt.theme';
 const ACCENT_KEY = 'bt.accent';
+const FONT_KEY = 'bt.font.scale';
+
+export type FontScale = 1 | 1.1 | 1.2 | 1.3 | 1.5;
+export const FONT_SCALES: FontScale[] = [1, 1.1, 1.2, 1.3, 1.5];
+
+function readFontScale(): FontScale {
+  try {
+    const value = Number(localStorage.getItem(FONT_KEY));
+    return FONT_SCALES.includes(value as FontScale) ? (value as FontScale) : 1;
+  } catch {
+    return 1;
+  }
+}
+
+/** Escala de la tipografía tokenizada (ver --font-scale en styles.css). */
+export function applyFontScale(scale: FontScale) {
+  if (typeof document === 'undefined') return;
+  document.documentElement.style.setProperty('--font-scale', String(scale));
+}
 
 function readMode(): ThemeMode {
   try {
@@ -70,37 +89,50 @@ export function applyTheme(mode: ThemeMode, accent: Accent) {
 // guardado (el script de `index.html` hace lo mismo antes de cargar React).
 const initialMode = readMode();
 const initialAccent = readAccent();
+const initialFontScale = readFontScale();
 applyTheme(initialMode, initialAccent);
+applyFontScale(initialFontScale);
 
 interface ThemeCtx {
   mode: ThemeMode;
   accent: Accent;
+  fontScale: FontScale;
   setMode: (mode: ThemeMode) => void;
   setAccent: (accent: Accent) => void;
+  setFontScale: (scale: FontScale) => void;
 }
 
 const Ctx = createContext<ThemeCtx>({
   mode: 'dark',
   accent: 'violet',
+  fontScale: 1,
   setMode: () => {},
   setAccent: () => {},
+  setFontScale: () => {},
 });
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [mode, setMode] = useState<ThemeMode>(initialMode);
   const [accent, setAccent] = useState<Accent>(initialAccent);
+  const [fontScale, setFontScale] = useState<FontScale>(initialFontScale);
 
   useEffect(() => {
     applyTheme(mode, accent);
+    applyFontScale(fontScale);
     try {
       localStorage.setItem(MODE_KEY, mode);
       localStorage.setItem(ACCENT_KEY, accent);
+      localStorage.setItem(FONT_KEY, String(fontScale));
     } catch {
       // Sin almacenamiento el tema sigue funcionando durante la sesión.
     }
-  }, [mode, accent]);
+  }, [mode, accent, fontScale]);
 
-  return <Ctx.Provider value={{ mode, accent, setMode, setAccent }}>{children}</Ctx.Provider>;
+  return (
+    <Ctx.Provider value={{ mode, accent, fontScale, setMode, setAccent, setFontScale }}>
+      {children}
+    </Ctx.Provider>
+  );
 }
 
 export function useTheme(): ThemeCtx {

@@ -96,8 +96,28 @@ export function safeNum(v: string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+/** Nombre elegido por el usuario, guardado como evento `profile.saved`. */
+export function displayNameFromEvents(events: VaultEvent[]): string {
+  const last = latestEventOfKind(events, 'profile.saved');
+  const name = typeof last?.payload?.name === 'string' ? last.payload.name.trim() : '';
+  return name.slice(0, 40);
+}
+
+/** Último evento de un tipo por timestamp (desempata por orden de llegada). */
+export function latestEventOfKind(events: VaultEvent[], kind: string): VaultEvent | undefined {
+  let best: VaultEvent | undefined;
+  for (const event of events) {
+    if (event.kind !== kind) continue;
+    if (!best || event.timestamp >= best.timestamp) best = event;
+  }
+  return best;
+}
+
 export function goalModeFromEvents(events: VaultEvent[]): GoalMode {
-  const last = [...events].reverse().find((e) => e.kind === 'goal.mode');
+  // Elegir por timestamp, no por posición en el array: después de una lectura
+  // completa la bóveda vuelve ordenada y un reloj desajustado podía hacer que
+  // el `goal.mode` nuevo quedara antes que uno antiguo de otro dispositivo.
+  const last = latestEventOfKind(events, 'goal.mode');
   const mode = last?.payload?.mode;
   return mode === 'cut' || mode === 'bulk' || mode === 'maintain' ? mode : 'maintain';
 }
@@ -200,7 +220,7 @@ const ACTIVITY_EN: Record<ActivityLevel, { label: string; short: string; descrip
 };
 
 export function activityLevelFromEvents(events: VaultEvent[]): ActivityLevel {
-  const last = [...events].reverse().find((e) => e.kind === 'activity.level');
+  const last = latestEventOfKind(events, 'activity.level');
   const level = last?.payload?.level;
   if (level === 'auto') return 'auto';
   return ACTIVITY_LEVELS.some((option) => option.id === level) ? (level as ActivityLevel) : 'auto';
@@ -234,7 +254,7 @@ export function stepActivityMultiplier(avgSteps: number): number | null {
 
 /** Último promedio de pasos diarios guardado, o 0 si no hay dato. */
 export function averageStepsFromEvents(events: VaultEvent[]): number {
-  const last = [...events].reverse().find((e) => e.kind === 'steps.average');
+  const last = latestEventOfKind(events, 'steps.average');
   const steps = Number(last?.payload?.steps);
   return Number.isFinite(steps) && steps > 0 ? steps : 0;
 }
@@ -252,7 +272,7 @@ export interface TrainingFrequency {
  * sesiones por semana para que la proyección no dependa de la unidad elegida.
  */
 export function trainingFrequencyFromEvents(events: VaultEvent[]): TrainingFrequency | null {
-  const last = [...events].reverse().find((e) => e.kind === 'training.frequency');
+  const last = latestEventOfKind(events, 'training.frequency');
   if (!last) return null;
   const raw = Number(last.payload?.perWeek);
   if (!Number.isFinite(raw) || raw < 0) return null;
@@ -264,7 +284,7 @@ export function trainingFrequencyFromEvents(events: VaultEvent[]): TrainingFrequ
 
 /** Ingesta media declarada a mano, o 0 si no hay dato. */
 export function averageIntakeFromEvents(events: VaultEvent[]): number {
-  const last = [...events].reverse().find((e) => e.kind === 'intake.average');
+  const last = latestEventOfKind(events, 'intake.average');
   const kcal = Number(last?.payload?.kcal);
   return Number.isFinite(kcal) && kcal > 0 ? clamp(kcal, 500, 10000) : 0;
 }
@@ -297,7 +317,7 @@ export function loggedIntakeAverage(
 }
 
 export function historyCutoff(events: VaultEvent[]): string {
-  const last = [...events].reverse().find((e) => e.kind === 'history.cleared');
+  const last = latestEventOfKind(events, 'history.cleared');
   return typeof last?.payload?.at === 'string' ? last.payload.at : '';
 }
 
@@ -386,7 +406,8 @@ export function reduceWeights(events: VaultEvent[]): WeightEntry[] {
   // alimentar la curva: si solo se lee la primera, un mes editando Medidas
   // deja el historial vacío. Si coinciden en fecha, gana el evento más reciente.
   const byDate = new Map<string, WeightEntry>();
-  for (const e of events) {
+  const chronological = [...events].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  for (const e of chronological) {
     let entry: WeightEntry | null = null;
     if (e.kind === 'weight.logged') {
       const payload = e.payload as WeightEntry;
@@ -405,7 +426,8 @@ export function reduceWeights(events: VaultEvent[]): WeightEntry[] {
 }
 
 export function reduceMeasurements(events: VaultEvent[]): MeasurementEntry[] {
-  return events
+  return [...events]
+    .sort((a, b) => a.timestamp.localeCompare(b.timestamp))
     .filter((e) => e.kind === 'measurement.saved')
     .map((e) => ({ ...EMPTY_MEASURES, ...(e.payload as MeasurementEntry) }));
 }

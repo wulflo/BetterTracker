@@ -1,3 +1,4 @@
+import { errorText } from './errors';
 import { dayNames } from './dates';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Habit, HabitFrequency, HabitKind, MoodScore, Reminder, VaultEvent } from './types';
@@ -150,7 +151,7 @@ export default function WellnessView({ deviceId, events, onRefresh, notify }: Pr
       notify(form.id ? tx(lang, 'Hábito actualizado.', 'Habit updated.') : tx(lang, 'Hábito creado.', 'Habit created.'), 'success');
       resetForm();
     } catch (error) {
-      notify(tx(lang, `No se pudo guardar el hábito: ${String(error)}`, `Could not save the habit: ${String(error)}`), 'error');
+      notify(tx(lang, `No se pudo guardar el hábito: ${errorText(error)}`, `Could not save the habit: ${errorText(error)}`), 'error');
     } finally {
       setBusy(false);
     }
@@ -199,7 +200,7 @@ export default function WellnessView({ deviceId, events, onRefresh, notify }: Pr
       await onRefresh();
       notify(tx(lang, 'Ánimo y resumen del día guardados.', 'Mood and day summary saved.'), 'success');
     } catch (error) {
-      notify(tx(lang, `No se pudo guardar el ánimo: ${String(error)}`, `Could not save the mood: ${String(error)}`), 'error');
+      notify(tx(lang, `No se pudo guardar el ánimo: ${errorText(error)}`, `Could not save the mood: ${errorText(error)}`), 'error');
     } finally {
       setBusy(false);
     }

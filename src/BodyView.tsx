@@ -3,6 +3,7 @@ import type { KeyboardEvent } from 'react';
 import type { ActivityLevel, BodyMeasures, GoalMode, MeasurementEntry, Sex, VaultEvent } from './types';
 import { EMPTY_MEASURES } from './types';
 import { appendEvent, newEvent } from './vault';
+import { errorText } from './errors';
 import {
   ACTIVITY_LEVELS,
   AUTO_ACTIVITY,
@@ -34,7 +35,7 @@ import { plural, tx, useLanguage } from './i18n';
 type BodyTab = 'datos' | 'composicion' | 'proyeccion';
 
 const BODY_TABS: Array<[BodyTab, string, string]> = [
-  ['datos', 'Datos y medidas', 'Data & measurements'],
+  ['datos', 'Medidas', 'Measurements'],
   ['composicion', 'Composición', 'Composition'],
   ['proyeccion', 'Proyección', 'Projection'],
 ];
@@ -84,10 +85,14 @@ export default function BodyView({ deviceId, events, onRefresh, notify }: Props)
       notify(tx(lang, 'Introduce un peso entre 20 y 400 kg.', 'Enter a weight between 20 and 400 kg.'), 'error');
       return;
     }
-    await appendEvent(newEvent(deviceId, 'weight.logged', { date: weightDate, kg: weightKg }));
-    setWeightKg(0);
-    await onRefresh();
-    notify(tx(lang, 'Peso registrado.', 'Weight logged.'), 'success');
+    try {
+      await appendEvent(newEvent(deviceId, 'weight.logged', { date: weightDate, kg: weightKg }));
+      setWeightKg(0);
+      void onRefresh();
+      notify(tx(lang, 'Peso registrado.', 'Weight logged.'), 'success');
+    } catch (e) {
+      notify(tx(lang, `No se pudo guardar el peso: ${errorText(e)}`, `Could not save the weight: ${errorText(e)}`), 'error');
+    }
   };
   const goal = useMemo(() => goalModeFromEvents(events), [events]);
   const activity = useMemo(() => activityLevelFromEvents(events), [events]);
@@ -176,9 +181,13 @@ export default function BodyView({ deviceId, events, onRefresh, notify }: Props)
       notify(tx(lang, 'Las medidas no pueden ser negativas.', "Measurements can't be negative."), 'error');
       return;
     }
-    await appendEvent(newEvent(deviceId, 'measurement.saved', { ...form }));
-    await onRefresh();
-    notify(tx(lang, 'Medidas guardadas.', 'Measurements saved.'), 'success');
+    try {
+      await appendEvent(newEvent(deviceId, 'measurement.saved', { ...form }));
+      void onRefresh();
+      notify(tx(lang, 'Medidas guardadas.', 'Measurements saved.'), 'success');
+    } catch (e) {
+      notify(tx(lang, `No se pudieron guardar las medidas: ${errorText(e)}`, `Could not save the measurements: ${errorText(e)}`), 'error');
+    }
   };
 
   const useLatestWeight = () => {
@@ -187,8 +196,12 @@ export default function BodyView({ deviceId, events, onRefresh, notify }: Props)
   };
 
   const changeActivity = async (level: ActivityLevel) => {
-    await appendEvent(newEvent(deviceId, 'activity.level', { level }));
-    await onRefresh();
+    try {
+      await appendEvent(newEvent(deviceId, 'activity.level', { level }));
+      void onRefresh();
+    } catch (e) {
+      notify(tx(lang, `No se pudo guardar la actividad: ${errorText(e)}`, `Could not save the activity: ${errorText(e)}`), 'error');
+    }
   };
 
   const estimatedFields = [
@@ -218,7 +231,7 @@ export default function BodyView({ deviceId, events, onRefresh, notify }: Props)
           aria-selected={bodyTab === 'datos'} tabIndex={bodyTab === 'datos' ? 0 : -1}
           className={`tab ${bodyTab === 'datos' ? 'active' : ''}`}
           onClick={() => setBodyTab('datos')} onKeyDown={onBodyTabKeyDown}>
-          {tx(lang, 'Datos y medidas', 'Data & measurements')}
+          {tx(lang, 'Medidas', 'Measurements')}
         </button>
         <button type="button" role="tab" id={"body-tab-composicion"} aria-controls={"body-panel-composicion"}
           aria-selected={bodyTab === 'composicion'} tabIndex={bodyTab === 'composicion' ? 0 : -1}
@@ -416,7 +429,7 @@ export default function BodyView({ deviceId, events, onRefresh, notify }: Props)
           <div className="card-header">
             <div>
               <div className="card-title"><Icon name="body" /> {tx(lang, 'Silueta adaptativa', 'Adaptive silhouette')}</div>
-              <div className="card-sub">{tx(lang, 'La forma cambia con las circunferencias. Los nodos se pueden arrastrar.', 'The shape changes with circumferences. Nodes can be dragged.')}</div>
+              <div className="card-sub">{tx(lang, 'La forma cambia con las circunferencias que registras en el formulario de medidas.', 'The shape changes with the circumferences entered in the measurement form.')}</div>
             </div>
             {weights.length > 1 && (
               <div style={{ width: 150 }}>
@@ -426,7 +439,7 @@ export default function BodyView({ deviceId, events, onRefresh, notify }: Props)
             )}
           </div>
           <div className="card-body">
-            <BodyFigure measures={form} onChange={(m) => setForm((f) => ({ ...f, ...m }))} />
+            <BodyFigure measures={form} />
           </div>
         </section>
 

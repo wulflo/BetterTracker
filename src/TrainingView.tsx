@@ -124,7 +124,7 @@ export default function TrainingView({ deviceId, events, exercises, onRefresh, n
         </div>
       </header>
 
-      <div className="tabs" role="tablist" aria-label={tx(lang, 'Secciones de entrenamiento', 'Training sections')}>
+      <div className="tabs tabs-training" role="tablist" aria-label={tx(lang, 'Secciones de entrenamiento', 'Training sections')}>
         {TABS.map(([id, es, en]) => (
           <button key={id} type="button" role="tab" aria-selected={tab === id} className={`tab ${tab === id ? 'active' : ''}`} onClick={() => setTab(id)}>
             {tx(lang, es, en)}

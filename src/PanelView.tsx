@@ -12,6 +12,7 @@ import type {
 } from './types';
 import { EMPTY_MEASURES } from './types';
 import { appendEvent, newEvent } from './vault';
+import { errorText } from './errors';
 import {
   activityLevelFromEvents,
   activityOption,
@@ -71,6 +72,8 @@ export default function PanelView({ deviceId, events, exercises, onRefresh, noti
   const [nutri, setNutri] = useState<NutritionEntry>(() => emptyNutrition(todayISO()));
   const dirtyNutrition = useRef(false);
   const [goalMode, setGoalMode] = useState<GoalMode>(() => goalModeFromEvents(events));
+  const pendingGoalRef = useRef<{ id: string; mode: GoalMode } | null>(null);
+  const goalWatchdogRef = useRef<number | null>(null);
   const [activity, setActivity] = useState<ActivityLevel>(() => activityLevelFromEvents(events));
   const [waterBusy, setWaterBusy] = useState(false);
   const [recipeSeed, setRecipeSeed] = useState(0);
@@ -81,12 +84,21 @@ export default function PanelView({ deviceId, events, exercises, onRefresh, noti
     } catch { return []; }
   });
   const waterSaving = useRef(false);
+  const waterGenRef = useRef(0);
   const autoWriteRef = useRef('');
+  const autoWritePendingRef = useRef('');
 
   // La bóveda se carga de forma asíncrona al abrir la app. Sin este efecto,
   // el modo elegido se quedaba en "mantener" hasta el siguiente clic.
   useEffect(() => {
-    setGoalMode(goalModeFromEvents(events));
+    const pending = pendingGoalRef.current;
+    if (pending && events.some((event) => event.id === pending.id)) {
+      setGoalMode(pending.mode);
+      pendingGoalRef.current = null;
+      if (goalWatchdogRef.current !== null) window.clearTimeout(goalWatchdogRef.current);
+    } else if (!pending) {
+      setGoalMode(goalModeFromEvents(events));
+    }
     setActivity(activityLevelFromEvents(events));
   }, [events]);
 
@@ -104,12 +116,20 @@ export default function PanelView({ deviceId, events, exercises, onRefresh, noti
   useEffect(() => {
     if (!autoIntake.enabledToday) return;
     const key = `${day}:${nutri.kcal}:${nutri.protein}:${nutri.carbs}:${nutri.fat}:${nutri.fiber}`;
-    if (autoWriteRef.current === key) return;
-    autoWriteRef.current = key;
+    if (autoWriteRef.current === key || autoWritePendingRef.current === key) return;
+    autoWritePendingRef.current = key;
     void saveAutoIntake(
       { kcal: nutri.kcal, protein: nutri.protein, carbs: nutri.carbs, fat: nutri.fat, fiber: nutri.fiber },
       true,
-    );
+    )
+      .then(() => {
+        autoWriteRef.current = key;
+        autoWritePendingRef.current = '';
+      })
+      .catch(() => {
+        // Permitir reintentar con los mismos valores si el write falló.
+        autoWritePendingRef.current = '';
+      });
   }, [nutri, day, autoIntake.enabledToday]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const training = projectionInputs.training;
@@ -231,9 +251,30 @@ export default function PanelView({ deviceId, events, exercises, onRefresh, noti
   };
 
   const changeGoal = async (mode: GoalMode) => {
+    const event = newEvent(deviceId, 'goal.mode', { mode });
+    // En Android el reloj puede ir por detrás de eventos sincronizados de otro
+    // dispositivo: asegurar que este evento va al final al ordenar por fecha.
+    const latest = events.reduce((max, e) => Math.max(max, Date.parse(e.timestamp) || 0), 0);
+    event.timestamp = new Date(Math.max(Date.now(), latest + 1)).toISOString();
+    pendingGoalRef.current = { id: event.id, mode };
+    if (goalWatchdogRef.current !== null) window.clearTimeout(goalWatchdogRef.current);
+    goalWatchdogRef.current = window.setTimeout(() => {
+      // Si el write se colgó, volver al estado real de la bóveda.
+      pendingGoalRef.current = null;
+      setGoalMode(goalModeFromEvents(events));
+    }, 12_000);
     setGoalMode(mode);
-    await appendEvent(newEvent(deviceId, 'goal.mode', { mode }));
-    await onRefresh();
+    try {
+      await appendEvent(event);
+    } catch (e) {
+      if (goalWatchdogRef.current !== null) window.clearTimeout(goalWatchdogRef.current);
+      pendingGoalRef.current = null;
+      setGoalMode(goalModeFromEvents(events));
+      notify(
+        tx(lang, `No se pudo guardar el objetivo: ${errorText(e)}`, `Could not save the goal: ${errorText(e)}`),
+        'error',
+      );
+    }
   };
 
   const remainingMacros = macros
@@ -266,14 +307,27 @@ export default function PanelView({ deviceId, events, exercises, onRefresh, noti
     if (next === current) return;
 
     waterSaving.current = true;
+    const generation = ++waterGenRef.current;
     setWaterBusy(true);
+    // En Android un guardado puede quedar colgado; liberar el guard para que
+    // los botones vuelvan a responder aunque el invoke no termine nunca.
+    let finished = false;
+    const watchdog = window.setTimeout(() => {
+      if (!finished) {
+        waterSaving.current = false;
+        setWaterBusy(false);
+      }
+    }, 15_000);
     setNutri((value) => ({ ...value, water: next, date: day }));
     try {
       // El agua forma parte del log diario de ingesta. Se guarda al momento
       // conservando los macros ya registrados para ese día.
       const base = savedToday ?? emptyNutrition(day);
       await appendEvent(newEvent(deviceId, 'nutrition.logged', { ...base, date: day, water: next }));
-      await onRefresh();
+      if (generation !== waterGenRef.current) return;
+      // La lectura de la bóveda va en segundo plano: si falla, no debe
+      // deshacerse un agua que sí se guardó.
+      void onRefresh();
       if (next > waterSafeMax && current <= waterSafeMax) {
         notify(
           tx(
@@ -287,12 +341,15 @@ export default function PanelView({ deviceId, events, exercises, onRefresh, noti
         notify(tx(lang, 'Objetivo de agua alcanzado.', 'Water goal reached.'), 'success');
       }
     } catch (e) {
+      if (generation !== waterGenRef.current) return;
       setNutri((value) => ({ ...value, water: current, date: day }));
       notify(
-        tx(lang, `No se pudo guardar el agua: ${String(e)}`, `Could not save water: ${String(e)}`),
+        tx(lang, `No se pudo guardar el agua: ${errorText(e)}`, `Could not save water: ${errorText(e)}`),
         'error',
       );
     } finally {
+      finished = true;
+      window.clearTimeout(watchdog);
       waterSaving.current = false;
       setWaterBusy(false);
     }
@@ -775,7 +832,7 @@ export default function PanelView({ deviceId, events, exercises, onRefresh, noti
               </button>
               <span className="badge badge-success">{tx(lang, 'Sin gluten ni frutos secos', 'Gluten & nut free')}</span>
             </div>
-            <div className="row wrap">
+            <div className="row wrap allergens-row">
               <span className="hint small">{tx(lang, 'Mis alérgenos:', 'My allergens:')}</span>
               {(Object.keys(ALLERGEN_LABELS) as AllergenId[]).map((id) => (
                 <button key={id} type="button" className={`chip ${userAllergens.includes(id) ? 'active' : ''}`} onClick={() => toggleUserAllergen(id)}>

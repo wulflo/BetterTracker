@@ -8,7 +8,7 @@
 > Build local del APK verificado con `CAMERA` presente (2026-10-28).
 > Fecha de inicio: 2026-10-28. Última actualización: 2026-10-28.
 > Objetivo: corregir la cámara/escaneo en Android, hacer accesibles las copias desde la app
-> y blindar la bóveda contra sobrescrituras de FolderSync.
+> y blindar la bóveda contra sobrescrituras externas.
 
 ## 1. Cámara y permisos (Android)
 
@@ -70,7 +70,7 @@
 ## 3. Snapshots accesibles y restauración
 
 - [x] Diagnóstico: `Longlife/<AAAA-MM-DD>` es compartido por todos los dispositivos.
-  Dos dispositivos pueden escribir la misma carpeta del día y FolderSync decide quién gana.
+  Dos dispositivos pueden escribir la misma carpeta del día y el sincronizador decide quién gana.
 - [x] Cambiar a snapshots por dispositivo: `Longlife/<device-id>/<AAAA-MM-DD>`.
 - [x] Escribir `snapshot.json` dentro de cada copia con dispositivo, plataforma, fecha y versión.
 - [x] Seguir leyendo y mostrando las copias antiguas `Longlife/<AAAA-MM-DD>` (legado).
@@ -80,18 +80,18 @@
 - [x] Restaurar también desde Android (SAF) y desde escritorio.
 - [ ] Probar restauración de una copia creada en Android desde la PC (requiere dispositivo).
 
-## 4. Blindaje contra FolderSync
+## 4. Blindaje contra reversiones externas
 
 - [x] Guardar cada evento nuevo como archivo propio
   (`omega/devices/<device>/events/<event-id>.json`) en vez de reescribir un JSONL completo.
 - [x] Mantener lectura de los `events.jsonl` antiguos.
-- [x] Deduplicar eventos por `id` al leer, aunque FolderSync duplique archivos.
+- [x] Deduplicar eventos por `id` al leer, aunque el sincronizador duplique archivos.
 - [x] Retención de copias por dispositivo (7 por dispositivo), sin borrar las de otros.
 - [x] Aviso en la UI si el número de eventos baja respecto al último visto para esa bóveda
   (una bóveda append-only nunca debería decrecer).
-- [x] Documentar que FolderSync debe sincronizar la bóveda completa, incluyendo `Longlife`,
+- [x] Documentar que el sincronizador debe sincronizar la bóveda completa, incluyendo `Longlife`,
   y que nunca debe resolverse un conflicto borrando `devices/` ni `Longlife/`
-  (ver `DECISIONES.md`, sección FolderSync).
+  (ver `DECISIONES.md`, sección Sincronización externa).
 - [x] Manifiesto de integridad en `snapshot.json` (`files`/`bytes` del contenido): una copia
   con marcador pero sin todos sus archivos se marca como **dañada**, y la copia del día se
   rehace sola (también desde «Crear copia de hoy»). Las copias sin manifiesto se aceptan.
@@ -135,7 +135,7 @@
 4. Pulsar **Restaurar** en la copia más reciente que contenga los datos que faltan. La app
    importa solo los eventos ausentes en `omega/devices/restored-<copia>-<marca>/` y refresca
    la vista; no borra ni sobrescribe nada.
-5. Si no aparece la copia esperada, comprobar que FolderSync haya terminado de sincronizar
+5. Si no aparece la copia esperada, comprobar que el sincronizador haya terminado de sincronizar
    `Longlife` y reabrir Ajustes.
 6. Como último recurso manual: copiar los eventos que falten a
    `omega/devices/restored-manual-<fecha>/events.jsonl` (nunca sobrescribir el archivo actual).

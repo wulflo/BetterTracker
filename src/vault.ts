@@ -85,6 +85,8 @@ export interface RestoreResult {
   already_present: number;
   source_events: number;
   folder: string;
+  /** Eventos importados, para añadirlos al estado sin releer la bóveda. */
+  events: VaultEvent[];
 }
 
 export async function getVaultInfo(): Promise<VaultInfo> {
@@ -150,6 +152,12 @@ export async function restoreSnapshot(id: string): Promise<RestoreResult> {
 export async function getDeviceId(): Promise<string> {
   if (!isTauri()) return mockDeviceId();
   return invoke<string>('get_device_id');
+}
+
+/** Huella barata de la bóveda para evitar releerla si no cambió. */
+export async function vaultFingerprint(): Promise<string> {
+  if (!isTauri()) return 'web';
+  return invoke<string>('vault_fingerprint');
 }
 
 export async function listEvents(): Promise<VaultEvent[]> {

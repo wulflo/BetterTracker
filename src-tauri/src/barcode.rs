@@ -11,12 +11,16 @@ const OFF_BASE: &str = "https://world.openfoodfacts.org/api/v2/product";
 const OFF_SEARCH: &str = "https://world.openfoodfacts.org/cgi/search.pl";
 /// Segundo host oficial de Open Food Facts: `world` devuelve 503 con frecuencia.
 const OFF_SEARCH_FALLBACK: &str = "https://fr.openfoodfacts.org/cgi/search.pl";
+/// API v2: el `cgi/search.pl` devuelve 503 intermitentemente por sobrecarga.
+const OFF_SEARCH_API: &str = "https://world.openfoodfacts.org/api/v2/search";
 const OFF_FIELDS: &str = "code,product_name,product_name_es,generic_name,brands,nutriments,categories_tags,quantity,serving_size";
 const TIMEOUT: Duration = Duration::from_secs(12);
 const MAX_QUERY_CHARS: usize = 80;
 const MAX_SEARCH_RESULTS: usize = 8;
 const SEARCH_CACHE_TTL: Duration = Duration::from_secs(600);
 const SEARCH_CACHE_MAX: usize = 24;
+/// Presupuesto total de la búsqueda, aunque haya varios endpoints y reintentos.
+const SEARCH_DEADLINE: Duration = Duration::from_secs(20);
 
 /// Entrada de la caché de búsqueda: momento en que se guardó y resultados.
 type SearchCacheEntry = (Instant, Vec<Value>);
@@ -116,10 +120,18 @@ pub async fn search_foods_remote(query: String) -> Result<Vec<Value>, String> {
     }
 
     let client = http_client()?;
+    let started = Instant::now();
     let mut payload: Option<Value> = None;
     let mut last_error = String::new();
+    let mut status_error: Option<String> = None;
     // Solo hosts oficiales escritos en el código: el usuario no controla la URL.
-    for endpoint in [OFF_SEARCH, OFF_SEARCH_FALLBACK] {
+    // El servicio de búsqueda de OFF devuelve 503 intermitentemente; se prueba
+    // también la API v2 y se hace una segunda pasada antes de rendirse.
+    for _ in 0..2 {
+        for endpoint in [OFF_SEARCH, OFF_SEARCH_FALLBACK, OFF_SEARCH_API] {
+        if started.elapsed() >= SEARCH_DEADLINE {
+            break;
+        }
         let request = client.get(endpoint).query(&[
             ("search_terms", query.as_str()),
             ("json", "1"),
@@ -139,22 +151,35 @@ pub async fn search_foods_remote(query: String) -> Result<Vec<Value>, String> {
                 }
             }
             Ok(response) => {
-                last_error = format!(
+                let message = format!(
                     "Open Food Facts respondió con estado {}.",
                     response.status()
                 );
+                // Conservar el primer estado HTTP: es la causa real aunque los
+                // reintentos posteriores fallen por red/timeout.
+                if status_error.is_none() {
+                    status_error = Some(message.clone());
+                }
+                last_error = message;
             }
             Err(error) => {
                 last_error = format!("No se pudo consultar Open Food Facts: {error}");
             }
         }
+        if payload.is_some() {
+            break;
+        }
+        }
+        if payload.is_some() {
+            break;
+        }
     }
     let payload = payload.ok_or_else(|| {
-        if last_error.is_empty() {
-            "Open Food Facts no devolvió resultados.".to_string()
+        status_error.or(if last_error.is_empty() {
+            Some("Open Food Facts no devolvió resultados.".to_string())
         } else {
-            last_error
-        }
+            Some(last_error)
+        }).unwrap_or_default()
     })?;
 
     let mut results = Vec::new();

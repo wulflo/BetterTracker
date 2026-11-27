@@ -10,13 +10,15 @@ La app se instala en **inglés** por defecto; se puede cambiar a español desde 
 
 El diálogo **Ajustes** se organiza en pestañas horizontales; la última pestaña usada se recuerda en el próximo arranque. Se puede cambiar de pestaña con el ratón o con las flechas izquierda/derecha del teclado.
 
-- **Apariencia**: tema claro/oscuro, color de acento e idioma; además, el formato instalado y el recordatorio de dónde se introduce el código de barras.
-- **Bóveda**: ruta de la bóveda, datos de la app, dispositivo, aviso de privacidad/red, aviso de modo navegador y carga de datos de ejemplo (solo en el navegador).
+- **Apariencia**: tema claro/oscuro, color de acento, **tamaño de texto** (100/110/120/130/150 %) e idioma; además, el formato instalado y el recordatorio de dónde se introduce el código de barras.
+- **Bóveda**: ruta de la bóveda, datos de la app, dispositivo, **tu nombre** (saludo de la cabecera), aviso de privacidad/red, aviso de modo navegador y carga de datos de ejemplo (solo en el navegador).
 - **Copias**: estado y tamaño de las copias `longlife`, creación de la copia del día, restauración no destructiva de eventos que falten y borrado de copias (irreversible).
 - **Actualizaciones**: comprobación manual e instalación opcional.
 - **Acerca de**: versión, commit, fecha de build, esquema de bóveda, número de eventos y enlaces al repositorio y a la política de privacidad.
 
 Desde el pie del diálogo se puede cambiar de bóveda.
+
+Al seleccionar la bóveda por primera vez se ofrece un campo opcional **Tu nombre**. Si se rellena, se guarda como evento `profile.saved` en esa bóveda y la cabecera muestra «Hola, *nombre*»; si se deja vacío aparece el aviso «Datos locales · sin cuentas · sin telemetría». El nombre también se puede introducir o cambiar después en **Ajustes → Bóveda → Tu nombre**.
 
 ## Biblioteca de ejercicios — descripciones
 
@@ -86,13 +88,13 @@ La proyección es un integrador fisiológico diario de dos compartimentos (Hall/
 
 ## Figura corporal — Silueta
 
-Figura corporal se organiza en pestañas: **Datos y medidas** (formulario y registro rápido de peso), **Composición** (indicadores, silueta y consenso de ecuaciones) y **Proyección** (tendencia y simulación).
+Figura corporal se organiza en pestañas: **Medidas** (formulario y registro rápido de peso), **Composición** (indicadores, silueta y consenso de ecuaciones) y **Proyección** (tendencia y simulación).
 
 **Alimentación** tiene tres pestañas: **Ingesta** (macros, FoodLog y activación del registro automático), **Agua** (contador, objetivo y límites) y **Recetas** (50 platos, botón «Rotar recetas» para ver otros tres y etiquetas de alérgenos). Todas las recetas son sin gluten ni frutos secos; cuando llevan lácteos, huevo, soja, pescado, marisco o sésamo se indican como alérgenos. Ya no hay pestañas Resumen ni Recordatorios: los recordatorios están en Hábitos.
 
 El formulario de medidas: peso, altura, edad, sexo, cuello, pecho, cintura, abdomen, cadera, bíceps/antebrazo, muslo, pantorrilla y muñeca. Los campos se comportan como datos ausentes, no como cero.
 
-La silueta adaptable **sigue el sexo ya seleccionado en el formulario de medidas** (no hay un segundo selector): cambia su forma y los rangos de los nodos arrastrables. Los nodos se arrastran hacia fuera para aumentar la circunferencia; si el sexo no está especificado, la silueta usa los rangos neutros y lo indica.
+La silueta adaptable **sigue el sexo ya seleccionado en el formulario de medidas** (no hay un segundo selector) y ajusta su forma a las circunferencias registradas. Es solo ilustrativa: no tiene nodos arrastrables; las medidas se introducen en centímetros en el formulario. Si el sexo no está especificado, usa rangos neutros y lo indica.
 
 ## Actualizaciones
 

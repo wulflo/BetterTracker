@@ -45,8 +45,9 @@ no borres nada sin confirmación explícita.
 
 ### 2.2 Copias (`longlife/`)
 
-- [ ] ¿La retención está acotada a 7 días **por dispositivo** (`prune_local_device_backups`
-      `:1134`, `prune_saf_device_backups` `:1955`)? Nunca aumentes el límite sin decisión.
+- [ ] ¿La retención está acotada a 7 copias **en total**, sumando dispositivos
+      (`prune_local_backups` / `prune_saf_backups`; antes era 7 por dispositivo)?
+      Nunca aumentes el límite sin decisión.
 - [ ] ¿Cada snapshot tiene manifiesto coherente (`manifest_matches` `:956`, SAF `:1716`)
       y marcador `.backup-complete`? Un snapshot `damaged` se reporta, no se silencia.
 - [ ] ¿Los archivos `snapshot.json` y `.backup-complete` se cuentan como metadatos, no

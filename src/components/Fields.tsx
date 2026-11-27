@@ -97,7 +97,7 @@ export function Stat({
   return (
     <div className="metric">
       <div className="metric-label">{label}</div>
-      <div className="metric-value-lg">{value}</div>
+      <div className="metric-value-lg stat-value">{value}</div>
       {caption && <div className="metric-caption">{caption}</div>}
     </div>
   );

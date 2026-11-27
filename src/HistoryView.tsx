@@ -1,3 +1,4 @@
+import { errorText } from './errors';
 import { autoIntakeEntries, autoIntakeSummary } from './projectionInputs';
 import { useEffect, useMemo, useState } from 'react';
 import type { Exercise, PR, Session, VaultEvent, Workout } from './types';
@@ -18,6 +19,7 @@ import {
   reduceSessions,
   reduceWeights,
   reduceWorkouts,
+  todayISO,
   trainingFrequencyFromEvents,
   trainingSummary,
   visibleTrainingEvents,
@@ -87,7 +89,7 @@ export default function HistoryView({ deviceId, events, exercises, onRefresh, no
       training.weeklyMinutes,
       goalModeFromEvents(events),
       activityLevelFromEvents(events),
-      'es',
+      lang,
       avgSteps,
       {
         summary: exerciseSummary,
@@ -104,10 +106,10 @@ export default function HistoryView({ deviceId, events, exercises, onRefresh, no
       fiber: macros.fiber,
       water: water.targetMl,
     };
-  }, [body, exerciseSummary, events, avgSteps]);
+  }, [body, exerciseSummary, events, avgSteps, lang]);
   const autoIntake = useMemo(() => autoIntakeSummary(events), [events]);
   const autoEntries = useMemo(() => autoIntakeEntries(events), [events]);
-  const [autoDay, setAutoDay] = useState(() => new Date().toISOString().slice(0, 10));
+  const [autoDay, setAutoDay] = useState(() => todayISO());
   const [autoKcal, setAutoKcal] = useState(0);
   const [autoBusy, setAutoBusy] = useState(false);
 
@@ -133,7 +135,7 @@ export default function HistoryView({ deviceId, events, exercises, onRefresh, no
         'success',
       );
     } catch (e) {
-      notify(tx(lang, `No se pudo guardar: ${String(e)}`, `Could not save: ${String(e)}`), 'error');
+      notify(tx(lang, `No se pudo guardar: ${errorText(e)}`, `Could not save: ${errorText(e)}`), 'error');
     } finally {
       setAutoBusy(false);
     }

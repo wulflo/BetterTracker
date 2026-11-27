@@ -1,4 +1,3 @@
-import React, { useRef, useState } from 'react';
 import type { BodyMeasures } from './types';
 import { clamp } from './metrics';
 import { tx, useLanguage } from './i18n';
@@ -39,36 +38,9 @@ function limitsFor(key: string, sex: BodyMeasures['sex']): Limits {
   return LIMITS[key]?.[sex] ?? NEUTRAL[key] ?? { min: 0, max: 1 };
 }
 
-const NODES: Array<{
-  key: keyof BodyMeasures;
-  label: string;
-  labelEn: string;
-  x: number;
-  y: number;
-  labelLeft?: boolean;
-}> = [
-  { key: 'neck', label: 'Cuello', labelEn: 'Neck', x: 150, y: 88 },
-  { key: 'chest', label: 'Pecho', labelEn: 'Chest', x: 150, y: 132 },
-  { key: 'waist', label: 'Cintura', labelEn: 'Waist', x: 150, y: 190 },
-  { key: 'abdomen', label: 'Abdomen', labelEn: 'Abdomen', x: 150, y: 214, labelLeft: true },
-  { key: 'hip', label: 'Cadera', labelEn: 'Hip', x: 150, y: 244 },
-  { key: 'arm', label: 'Brazo', labelEn: 'Arm', x: 72, y: 160 },
-  { key: 'forearm', label: 'Antebrazo', labelEn: 'Forearm', x: 64, y: 208 },
-  { key: 'thigh', label: 'Muslo', labelEn: 'Thigh', x: 124, y: 318 },
-  { key: 'calf', label: 'Pantorrilla', labelEn: 'Calf', x: 128, y: 380 },
-  { key: 'wrist', label: 'Muñeca', labelEn: 'Wrist', x: 54, y: 246 },
-];
-
-export default function BodyFigure({
-  measures,
-  onChange,
-}: {
-  measures: BodyMeasures;
-  onChange: (m: BodyMeasures) => void;
-}) {
+/** Silueta de solo lectura: las medidas se registran en el formulario en cm. */
+export default function BodyFigure({ measures }: { measures: BodyMeasures }) {
   const { lang } = useLanguage();
-  const svgRef = useRef<SVGSVGElement>(null);
-  const [dragging, setDragging] = useState<string | null>(null);
   const valueOf = (key: keyof BodyMeasures): number => {
     const v = Number(measures[key]);
     if (Number.isFinite(v) && v > 0) return v;
@@ -79,39 +51,6 @@ export default function BodyFigure({
   const scaleOf = (key: keyof BodyMeasures): number => {
     const lim = limitsFor(key, measures.sex);
     return clamp((valueOf(key) - lim.min) / Math.max(1, lim.max - lim.min), 0, 1);
-  };
-
-  const setValue = (key: keyof BodyMeasures, value: number) => {
-    const lim = limitsFor(key, measures.sex);
-    onChange({ ...measures, [key]: Math.round(clamp(value, lim.min, lim.max) * 10) / 10 });
-  };
-
-  const onPointerDown = (key: string) => (e: React.PointerEvent<SVGCircleElement>) => {
-    e.preventDefault();
-    setDragging(key);
-    e.currentTarget.setPointerCapture(e.pointerId);
-  };
-
-  const onPointerMove = (key: keyof BodyMeasures) => (e: React.PointerEvent<SVGCircleElement>) => {
-    if (dragging !== key) return;
-    const svg = svgRef.current;
-    if (!svg) return;
-    const rect = svg.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * 300;
-    const y = ((e.clientY - rect.top) / rect.height) * 420;
-    const distance = Math.hypot(x - 150, y - 120);
-    const lim = limitsFor(key, measures.sex);
-    const normalized = clamp((distance - 42) / 118, 0, 1);
-    setValue(key, lim.min + normalized * (lim.max - lim.min));
-  };
-
-  const onPointerUp = (e: React.PointerEvent<SVGCircleElement>) => {
-    setDragging(null);
-    try {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    } catch {
-      // La captura ya se liberó.
-    }
   };
 
   const male = measures.sex === 'male';
@@ -138,7 +77,6 @@ export default function BodyFigure({
   return (
     <div className="body-figure">
       <svg
-        ref={svgRef}
         viewBox="0 0 300 420"
         role="img"
         aria-label={tx(lang, 'Figura corporal adaptativa', 'Adaptive body figure')}
@@ -181,43 +119,12 @@ export default function BodyFigure({
         {limb(`M${150 - shoulder + 3} 122 Q${150 - shoulder - arm - 12} 172 ${150 - shoulder - arm - 4} 246`, arm * 2, 'arm-l')}
         {limb(`M${150 + shoulder - 3} 122 Q${150 + shoulder + arm + 12} 172 ${150 + shoulder + arm + 4} 246`, arm * 2, 'arm-r')}
         {limb(`M${150 - hip + 8} 252 Q${150 - hipWidth + 2} 300 ${150 - 26} 348`, thigh * 2, 'thigh-l')}
-        {limb(`M${150 + hip - 8} 252 Q${150 + hipWidth - 2} 300 ${150 + 26} 348`, thigh * 2, 'thigh-r')}
+        {limb(`M${150 + hip - 8} 252 Q${150 - hipWidth - 2} 300 ${150 + 26} 348`, thigh * 2, 'thigh-r')}
         {limb(`M${150 - 26} 352 Q${150 - 24} 386 ${150 - 22} 404`, calf * 2, 'calf-l')}
         {limb(`M${150 + 26} 352 Q${150 + 24} 386 ${150 + 22} 404`, calf * 2, 'calf-r')}
-
-        {/* Nodos arrastrables */}
-        {NODES.map((node) => {
-          const active = dragging === node.key;
-          const value = valueOf(node.key);
-          const toRight = node.labelLeft ? false : node.x >= 150;
-          const dx = toRight ? 13 : -13;
-          const anchor = toRight ? 'start' : 'end';
-          return (
-            <g key={node.key}>
-              <circle
-                cx={node.x}
-                cy={node.y}
-                r={active ? 9 : 6.5}
-                fill={active ? 'var(--primary)' : 'var(--surface-1)'}
-                stroke="var(--primary)"
-                strokeWidth="2"
-                style={{ cursor: 'grab' }}
-                onPointerDown={onPointerDown(node.key)}
-                onPointerMove={onPointerMove(node.key)}
-                onPointerUp={onPointerUp}
-                onPointerCancel={onPointerUp}
-              >
-                <title>{`${lang === 'en' ? node.labelEn : node.label}: ${value.toFixed(1)} cm`}</title>
-              </circle>
-              <text x={node.x + dx} y={node.y + 4} textAnchor={anchor} className="figure-node-label">
-                {lang === 'en' ? node.labelEn : node.label}
-              </text>
-            </g>
-          );
-        })}
       </svg>
       <div className="figure-caption">
-        <span>{tx(lang, 'La silueta sigue el sexo del formulario de medidas. Arrastra los nodos hacia fuera para aumentar la medida.', 'The silhouette follows the sex from the measurement form. Drag the nodes outwards to increase the measurement.')}</span>
+        <span>{tx(lang, 'La silueta refleja las circunferencias registradas en el formulario de medidas.', 'The silhouette reflects the circumferences entered in the measurement form.')}</span>
         {measures.sex === 'unspecified' && (
           <span className="badge badge-muted">
             {tx(lang, 'Sexo sin especificar en los cálculos', 'Sex unspecified in calculations')}

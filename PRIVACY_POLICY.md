@@ -23,7 +23,7 @@ system picker.
 
 The data is plain JSON. It is not encrypted by the app. You control the
 folder, its backups, and any synchronization you configure yourself (for
-example, FolderSync). Better Fitness Tracker does not operate any server, cloud
+example, a third-party file sync tool). Better Fitness Tracker does not operate any server, cloud
 storage, or account system.
 
 ## Data the app does not collect
@@ -107,7 +107,7 @@ con el selector del sistema.
 
 Los datos son JSON en claro. La app no los cifra. Tú controlas la carpeta, sus
 copias y cualquier sincronización que configures por tu cuenta (por ejemplo,
-FolderSync). Better Fitness Tracker no opera servidores, almacenamiento en la nube ni
+p. ej., una herramienta de sincronización de archivos). Better Tracker no opera servidores, almacenamiento en la nube ni
 sistemas de cuentas.
 
 ## Datos que la app no recopila

@@ -69,6 +69,7 @@ pub fn run() {
             commands::open_external,
             commands::get_device_id,
             commands::list_events,
+            commands::vault_fingerprint,
             commands::append_event,
             commands::fetch_update_manifest,
             commands::download_and_install_linux_package,

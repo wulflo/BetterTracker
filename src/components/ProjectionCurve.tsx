@@ -102,7 +102,7 @@ export default function ProjectionCurve({ trajectory, lang }: { trajectory: Proj
         role="img"
         aria-label={tx(lang, 'Evolución proyectada de peso, grasa y masa magra', 'Projected weight, fat and lean mass evolution')}
       >
-        <text x={4} y={10} fontSize="9" fill="currentColor" fillOpacity="0.45">
+        <text x={4} y={10} style={{ fontSize: 'var(--fs-xs)' }} fill="currentColor" fillOpacity="0.45">
           kg
         </text>
         {ticks.map((tick) => {
@@ -118,7 +118,7 @@ export default function ProjectionCurve({ trajectory, lang }: { trajectory: Proj
                 strokeOpacity="0.1"
                 strokeWidth="1"
               />
-              <text x={pad.left - 6} y={y + 3} textAnchor="end" fontSize="9" fill="currentColor" fillOpacity="0.55">
+              <text x={pad.left - 6} y={y + 3} textAnchor="end" style={{ fontSize: 'var(--fs-xs)' }} fill="currentColor" fillOpacity="0.55">
                 {tick.toFixed(0)}
               </text>
             </g>
@@ -142,7 +142,7 @@ export default function ProjectionCurve({ trajectory, lang }: { trajectory: Proj
           if (!Number.isFinite(lastValue)) return null;
           return <circle key={`dot-${s.label}`} cx={xFor(n)} cy={yFor(lastValue)} r="2.6" fill={s.color} />;
         })}
-        <text x={pad.left} y={height - 8} fontSize="9" fill="currentColor" fillOpacity="0.6">
+        <text x={pad.left} y={height - 8} style={{ fontSize: 'var(--fs-xs)' }} fill="currentColor" fillOpacity="0.6">
           {tx(lang, 'Hoy', 'Today')}
         </text>
         {showMiddle && (
@@ -150,14 +150,14 @@ export default function ProjectionCurve({ trajectory, lang }: { trajectory: Proj
             x={xFor(middleIndex)}
             y={height - 8}
             textAnchor="middle"
-            fontSize="9"
+            style={{ fontSize: 'var(--fs-xs)' }}
             fill="currentColor"
             fillOpacity="0.5"
           >
             {formatProjectionDate(trajectory[middleIndex].date, lang)}
           </text>
         )}
-        <text x={pad.left + plotW} y={height - 8} textAnchor="end" fontSize="9" fill="currentColor" fillOpacity="0.6">
+        <text x={pad.left + plotW} y={height - 8} textAnchor="end" style={{ fontSize: 'var(--fs-xs)' }} fill="currentColor" fillOpacity="0.6">
           {formatProjectionDate(trajectory[n].date, lang)}
         </text>
       </svg>

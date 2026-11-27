@@ -16,8 +16,9 @@ import {
   selectVault,
   type BackupStatus,
   type SnapshotInfo,
+  vaultFingerprint,
 } from './vault';
-import { reduceExercises } from './metrics';
+import { displayNameFromEvents, reduceExercises } from './metrics';
 import PanelView from './PanelView';
 import TrainingView from './TrainingView';
 import HistoryView from './HistoryView';
@@ -26,7 +27,7 @@ import WellnessView from './WellnessView';
 import Select from './components/Select';
 import { Icon, LogoMark } from './components/Icons';
 import { useLanguage, t, tx } from './i18n';
-import { ACCENTS, useTheme } from './theme';
+import { ACCENTS, FONT_SCALES, useTheme } from './theme';
 import UpdatePanel from './components/UpdatePanel';
 import { WindowControls, WindowResizeHandles } from './components/WindowChrome';
 import { errorText } from './errors';
@@ -82,6 +83,9 @@ export default function App() {
     const saved = localStorage.getItem('bt.settings.tab');
     return SETTINGS_TABS.some(([id]) => id === saved) ? (saved as SettingsTab) : 'appearance';
   });
+  const [profileDraft, setProfileDraft] = useState('');
+  const [onboardingName, setOnboardingName] = useState('');
+  const [profileBusy, setProfileBusy] = useState(false);
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null);
   const toastTimer = useRef<number | null>(null);
   const dropWarnedRef = useRef('');
@@ -89,8 +93,14 @@ export default function App() {
   // incluye el evento de forma optimista; evitar releer toda la bóveda durante
   // ~1,2 s mantiene la app fluida aunque haya años de historial.
   const lastLocalAppendRef = useRef(0);
+  // Invalida lecturas de la bóveda iniciadas antes de un guardado. En Android
+  // `listEvents` tarda mucho: sin esto, una lectura vieja podía terminar después
+  // del append y borrar del estado el evento recién guardado.
+  const refreshGenerationRef = useRef(0);
+  const deferredRefreshRef = useRef<number | null>(null);
+  const fingerprintRef = useRef('');
   const { lang, setLang } = useLanguage();
-  const { mode, setMode, accent, setAccent } = useTheme();
+  const { mode, setMode, accent, setAccent, fontScale, setFontScale } = useTheme();
 
   const notify = useCallback((message: string, tone: ToastTone = 'info') => {
     setToast({ message, tone });
@@ -118,12 +128,23 @@ export default function App() {
 
   const refresh = useCallback(async (force = false) => {
     if (!force && Date.now() - lastLocalAppendRef.current < 1200) return;
+    if (!force && isTauri()) {
+      try {
+        const fingerprint = await vaultFingerprint();
+        if (fingerprint === fingerprintRef.current) return;
+        fingerprintRef.current = fingerprint;
+      } catch {
+        // Sin huella se hace la lectura completa; es solo una optimización.
+      }
+    }
+    const generation = ++refreshGenerationRef.current;
     try {
       const next = await listEvents();
+      if (generation !== refreshGenerationRef.current) return;
       setEvents(next);
       if (vault) {
         // La bóveda es append-only: si el número de eventos baja, algo externo
-        // (FolderSync, una copia antigua del PC…) ha revertido archivos.
+        // (un sincronizador externo, una copia antigua del PC…) ha revertido archivos.
         const key = `bt.event-count:${vault}`;
         const previous = Number.parseInt(localStorage.getItem(key) ?? '', 10);
         if (Number.isFinite(previous) && previous > next.length) {
@@ -182,13 +203,24 @@ export default function App() {
       const detail = (raw as CustomEvent<VaultEvent>).detail;
       if (!detail || typeof detail.id !== 'string') return;
       lastLocalAppendRef.current = Date.now();
+      refreshGenerationRef.current += 1;
       setEvents((previous) =>
         previous.some((event) => event.id === detail.id) ? previous : [...previous, detail],
       );
+      // El append optimista se confirma con una lectura diferida; se agrupan
+      // varios appends seguidos en una sola y no bloquea la UI.
+      if (deferredRefreshRef.current !== null) window.clearTimeout(deferredRefreshRef.current);
+      deferredRefreshRef.current = window.setTimeout(() => {
+        deferredRefreshRef.current = null;
+        void refresh(true);
+      }, 1600);
     };
     window.addEventListener(EVENT_APPENDED, onAppended);
-    return () => window.removeEventListener(EVENT_APPENDED, onAppended);
-  }, []);
+    return () => {
+      window.removeEventListener(EVENT_APPENDED, onAppended);
+      if (deferredRefreshRef.current !== null) window.clearTimeout(deferredRefreshRef.current);
+    };
+  }, [refresh]);
 
   // Copia diaria en `longlife`. La comprobación se repite cada 6 horas por si
   // la app queda abierta, y siempre es idempotente: solo crea una copia por día.
@@ -284,6 +316,25 @@ export default function App() {
       setBackupStatus(null);
       setConfirmDeleteBackups(false);
       notify(tx(lang, 'Bóveda seleccionada.', 'Vault selected.'), 'success');
+      const name = onboardingName.trim().slice(0, 40);
+      setOnboardingName('');
+      if (name) {
+        try {
+          const id = deviceId || (await getDeviceId());
+          await appendEvent(newEvent(id, 'profile.saved', { name }));
+          setProfileDraft(name);
+          notify(tx(lang, 'Nombre guardado en la bóveda.', 'Name saved to the vault.'), 'success');
+        } catch (e) {
+          notify(
+            tx(
+              lang,
+              `Bóveda seleccionada, pero no se pudo guardar el nombre: ${errorText(e)}`,
+              `Vault selected, but the name could not be saved: ${errorText(e)}`,
+            ),
+            'error',
+          );
+        }
+      }
       try {
         const result = await runBackup();
         setBackupStatus(result.status);
@@ -298,6 +349,32 @@ export default function App() {
 
   const createBackup = async () => {
     setBackupBusy(true);
+    // En SAF copiar un evento por archivo puede tardar minutos; sin watchdog
+    // el botón se quedaba en «Working…» para siempre si el invoke no volvía.
+    const notice = window.setTimeout(() => {
+      // Tauri #14994: en Android un invoke puede quedar esperando hasta que
+      // llega otra llamada IPC. Un comando barato la desbloquea sin tocar datos.
+      void getAppInfo().catch(() => {});
+      notify(
+        tx(
+          lang,
+          'La copia sigue en curso; en SAF puede tardar varios minutos.',
+          'The backup is still running; on SAF it can take several minutes.',
+        ),
+        'info',
+      );
+    }, 30_000);
+    const watchdog = window.setTimeout(() => {
+      setBackupBusy(false);
+      notify(
+        tx(
+          lang,
+          'La copia está tardando demasiado. Revisa la bóveda y vuelve a intentarlo.',
+          'The backup is taking too long. Check the vault and try again.',
+        ),
+        'error',
+      );
+    }, 180_000);
     try {
       const result = await runBackup(true);
       setBackupStatus(result.status);
@@ -324,6 +401,8 @@ export default function App() {
         'error',
       );
     } finally {
+      window.clearTimeout(notice);
+      window.clearTimeout(watchdog);
       setBackupBusy(false);
     }
   };
@@ -354,15 +433,52 @@ export default function App() {
 
   const restoreCopy = async (copy: SnapshotInfo) => {
     setRestoreBusy(copy.id);
+    // Si el comando SAF se cuelga, liberar el spinner y avisar en vez de dejar
+    // todos los botones deshabilitados para siempre.
+    const notice = window.setTimeout(() => {
+      // Mismo workaround de Tauri #14994 para la llamada SAF bloqueada.
+      void getAppInfo().catch(() => {});
+      notify(
+        tx(
+          lang,
+          'La restauración sigue en curso; en SAF puede tardar varios minutos.',
+          'The restore is still running; on SAF it can take several minutes.',
+        ),
+        'info',
+      );
+    }, 30_000);
+    const watchdog = window.setTimeout(() => {
+      setRestoreBusy(null);
+      notify(
+        tx(
+          lang,
+          'La restauración está tardando demasiado. Revisa la bóveda y vuelve a intentarlo.',
+          'The restore is taking too long. Check the vault and try again.',
+        ),
+        'error',
+      );
+    }, 180_000);
     try {
       const result = await restoreSnapshot(copy.id);
       setConfirmRestore(null);
-      await refresh(true);
-      try {
-        setBackupStatus(await getBackupStatus());
-      } catch {
-        // La restauración ya se aplicó; la lista se refrescará al abrir Ajustes.
+      // Aplicar los importados de una sola vez. Un `refresh(true)` releería
+      // toda la bóveda por SAF; disparar un EVENT_APPENDED por evento provoca
+      // cientos de renders en el WebView y también deja la UI colgada.
+      if (result.events.length > 0) {
+        refreshGenerationRef.current += 1;
+        lastLocalAppendRef.current = Date.now();
+        setEvents((previous) => {
+          const known = new Set(previous.map((event) => event.id));
+          const added = result.events.filter((event) => !known.has(event.id));
+          return added.length > 0 ? [...previous, ...added] : previous;
+        });
       }
+      void getBackupStatus()
+        .then(setBackupStatus)
+        .catch((e) => notify(
+          tx(lang, `No se pudo actualizar el estado de copias: ${errorText(e)}`, `Could not refresh backup status: ${errorText(e)}`),
+          'error',
+        ));
       if (result.imported > 0) {
         notify(
           tx(
@@ -388,7 +504,31 @@ export default function App() {
         'error',
       );
     } finally {
+      window.clearTimeout(notice);
+      window.clearTimeout(watchdog);
       setRestoreBusy(null);
+    }
+  };
+
+  const displayName = displayNameFromEvents(events);
+  useEffect(() => {
+    if (displayName) setProfileDraft(displayName);
+  }, [displayName]);
+
+  const saveProfile = async () => {
+    const name = profileDraft.trim().slice(0, 40);
+    if (!name) {
+      notify(tx(lang, 'Escribe tu nombre.', 'Enter your name.'), 'error');
+      return;
+    }
+    setProfileBusy(true);
+    try {
+      await appendEvent(newEvent(deviceId, 'profile.saved', { name }));
+      notify(tx(lang, 'Nombre guardado en la bóveda.', 'Name saved to the vault.'), 'success');
+    } catch (e) {
+      notify(tx(lang, `No se pudo guardar el nombre: ${errorText(e)}`, `Could not save the name: ${errorText(e)}`), 'error');
+    } finally {
+      setProfileBusy(false);
     }
   };
 
@@ -478,7 +618,7 @@ export default function App() {
       <div className="hero">
         <div className="hero-card">
           <div className="hero-logo"><LogoMark size={64} /></div>
-          <h1>Better Fitness Tracker</h1>
+          <h1>Better Tracker</h1>
           <p>
             {tx(
               lang,
@@ -486,6 +626,18 @@ export default function App() {
               'Your training, body composition and dual satiety, all local. No accounts, no telemetry, and signed updates only when you ask for them.',
             )}
           </p>
+          <label className="hero-name" htmlFor="onboarding-name">
+            {tx(lang, 'Tu nombre (opcional)', 'Your name (optional)')}
+          </label>
+          <input
+            id="onboarding-name"
+            className="input"
+            maxLength={40}
+            autoComplete="given-name"
+            value={onboardingName}
+            onChange={(event) => setOnboardingName(event.target.value)}
+            placeholder={tx(lang, 'Cómo quieres que te salude', 'How you want to be greeted')}
+          />
           <button className="btn btn-primary" onClick={chooseVault}>
             <Icon name="plus" size={16} /> {tx(lang, 'Seleccionar bóveda', 'Select vault')}
           </button>
@@ -504,7 +656,7 @@ export default function App() {
         <div className="brand" data-tauri-drag-region="deep">
           <div className="brand-logo"><LogoMark size={40} /></div>
           <div className="brand-text">
-            <strong>Better Fitness Tracker</strong>
+            <strong>Better Tracker</strong>
             <span>{t('app.subtitle', lang)}</span>
           </div>
         </div>
@@ -559,7 +711,9 @@ export default function App() {
           <div className="row wrap">
             <span className="badge badge-success"><span className="status-dot" /> {tx(lang, 'Solo local', 'Local only')}</span>
             <span className="hint">
-              {tx(lang, 'Datos locales · sin cuentas · sin telemetría', 'Local data · no accounts · no telemetry')}
+              {displayName
+                ? tx(lang, `Hola, ${displayName}`, `Hi, ${displayName}`)
+                : tx(lang, 'Datos locales · sin cuentas · sin telemetría', 'Local data · no accounts · no telemetry')}
             </span>
           </div>
           <div className="topbar-actions">
@@ -572,7 +726,10 @@ export default function App() {
         </header>
 
         <div className="content">
-          {view === 'panel' && (
+          {/* Las vistas se mantienen montadas: al cambiar de sección no se
+              recalculan desde cero las reducciones de la bóveda (BodyView
+              proyecta 81 escenarios × 1095 días). Solo se ocultan. */}
+          <div className="view-slot" hidden={view !== 'panel'}>
             <PanelView
               deviceId={deviceId}
               events={events}
@@ -580,8 +737,8 @@ export default function App() {
               onRefresh={onRefresh}
               notify={notify}
             />
-          )}
-          {view === 'training' && (
+          </div>
+          <div className="view-slot" hidden={view !== 'training'}>
             <TrainingView
               deviceId={deviceId}
               events={events}
@@ -589,8 +746,8 @@ export default function App() {
               onRefresh={onRefresh}
               notify={notify}
             />
-          )}
-          {view === 'history' && (
+          </div>
+          <div className="view-slot" hidden={view !== 'history'}>
             <HistoryView
               deviceId={deviceId}
               events={events}
@@ -598,26 +755,26 @@ export default function App() {
               onRefresh={onRefresh}
               notify={notify}
             />
-          )}
-          {view === 'body' && (
+          </div>
+          <div className="view-slot" hidden={view !== 'body'}>
             <BodyView
               deviceId={deviceId}
               events={events}
               onRefresh={onRefresh}
               notify={notify}
             />
-          )}
-          {view === 'wellness' && (
+          </div>
+          <div className="view-slot" hidden={view !== 'wellness'}>
             <WellnessView
               deviceId={deviceId}
               events={events}
               onRefresh={onRefresh}
               notify={notify}
             />
-          )}
+          </div>
           <div className="row between wrap" style={{ marginTop: 18 }}>
             <span className="hint">
-              Better Fitness Tracker · {info ? `v${info.version}` : 'v—'} ·{' '}
+              Better Tracker · {info ? `v${info.version}` : 'v—'} ·{' '}
               {tx(lang, `${events.length} eventos locales`, `${events.length} local events`)}
             </span>
             <span className="hint">
@@ -654,8 +811,8 @@ export default function App() {
                 <div className="card-sub">
                   {tx(
                     lang,
-                    'Estado local de Better Fitness Tracker. Sin cuentas ni telemetría; actualizaciones opcionales.',
-                    'Local Better Fitness Tracker status. No accounts or telemetry; optional updates.',
+                    'Estado local de Better Tracker. Sin cuentas ni telemetría; actualizaciones opcionales.',
+                    'Local Better Tracker status. No accounts or telemetry; optional updates.',
                   )}
                 </div>
               </div>
@@ -753,6 +910,26 @@ export default function App() {
                   </div>
                 </div>
                 <div className="settings-row">
+                  <span className="muted">{tx(lang, 'Tamaño de texto', 'Text size')}</span>
+                  <div
+                    className="segmented"
+                    role="group"
+                    aria-label={tx(lang, 'Tamaño de texto', 'Text size')}
+                  >
+                    {FONT_SCALES.map((scale) => (
+                      <button
+                        key={scale}
+                        type="button"
+                        className={`segment ${fontScale === scale ? 'active' : ''}`}
+                        aria-pressed={fontScale === scale}
+                        onClick={() => setFontScale(scale)}
+                      >
+                        {Math.round(scale * 100)}%
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="settings-row">
                   <span className="muted">{t('language', lang)}</span>
                   <Select
                     className="settings-select"
@@ -793,6 +970,22 @@ export default function App() {
                 <div className="settings-row">
                   <span className="muted">{tx(lang, 'Dispositivo', 'Device')}</span>
                   <span className="value mono">{deviceId}</span>
+                </div>
+                <div className="settings-row">
+                  <label className="muted" htmlFor="profile-name">{tx(lang, 'Tu nombre', 'Your name')}</label>
+                  <div className="row wrap">
+                    <input
+                      id="profile-name"
+                      className="input"
+                      maxLength={40}
+                      value={profileDraft}
+                      onChange={(event) => setProfileDraft(event.target.value)}
+                      placeholder={tx(lang, 'Cómo quieres que te salude', 'How you want to be greeted')}
+                    />
+                    <button className="btn btn-tonal" type="button" disabled={profileBusy} onClick={() => void saveProfile()}>
+                      {tx(lang, 'Guardar', 'Save')}
+                    </button>
+                  </div>
                 </div>
                 <div className="notice notice-info">
                   <Icon name="info" size={16} />
@@ -839,8 +1032,8 @@ export default function App() {
                     <span className="mono">longlife/&lt;dispositivo&gt;/&lt;fecha&gt;</span>
                     {tx(
                       lang,
-                      `. Se conservan las ${backupStatus?.retention_days ?? 7} más recientes de cada dispositivo.`,
-                      `. The ${backupStatus?.retention_days ?? 7} most recent per device are kept.`,
+                      `. Se conservan las ${backupStatus?.retention_days ?? 7} más recientes en total, sumando todos los dispositivos.`,
+                      `. The ${backupStatus?.retention_days ?? 7} most recent are kept in total, across all devices.`,
                     )}
                   </div>
                   <div className="settings-row">

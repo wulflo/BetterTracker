@@ -64,7 +64,7 @@ fn update_client() -> Result<reqwest::Client, String> {
 
 fn validate_release_url(url: &str) -> Result<(), String> {
     if !url.starts_with(RELEASE_PREFIX) {
-        return Err("La URL de actualización no pertenece a las releases de Better Fitness Tracker.".into());
+        return Err("La URL de actualización no pertenece a las releases de Better Tracker.".into());
     }
     if !url.starts_with("https://") {
         return Err("La URL de actualización debe usar HTTPS.".into());
@@ -758,6 +758,13 @@ pub fn frontend_ready(app: AppHandle) {
 #[tauri::command]
 pub fn get_device_id(app: AppHandle) -> String {
     vault::device_id(&app)
+}
+
+#[tauri::command]
+pub async fn vault_fingerprint(app: AppHandle) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || vault::vault_fingerprint(&app))
+        .await
+        .map_err(|error| format!("No se pudo comprobar la bóveda: {error}"))?
 }
 
 #[tauri::command]

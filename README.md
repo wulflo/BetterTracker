@@ -5,7 +5,7 @@
   Everything you log stays in a folder you choose. No accounts, no cloud, no telemetry.</p>
 
   <p>
-    <a href="VERSION"><img src="https://img.shields.io/badge/version-0.10.5-4f7cff?style=flat-square" alt="Version 0.10.5"></a>
+    <a href="VERSION"><img src="https://img.shields.io/badge/version-0.10.6-4f7cff?style=flat-square" alt="Version 0.10.6"></a>
     <a href="https://github.com/wulflo/BetterTracker/actions/workflows/ci.yml"><img src="https://github.com/wulflo/BetterTracker/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2ea44f?style=flat-square" alt="MIT license"></a>
     <img src="https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20Android-6b7280?style=flat-square" alt="Platforms">
@@ -22,7 +22,7 @@
     <a href="README.es.md">Español</a>
   </p>
 
-  <p>Current version: <strong>0.10.5</strong></p>
+  <p>Current version: <strong>0.10.6</strong></p>
 </div>
 
 <img src="docs/screenshots/dashboard.en.png" alt="Better Tracker Nutrition view with food search, macros, water and recipes">
@@ -127,10 +127,10 @@ The full interface is available in Spanish and English, switchable in Settings a
 - No accounts, cloud dependency, telemetry, or LAN/P2P synchronization.
 - The vault is a folder you choose. All app data lives in `<vault>/omega`. Every new event is written as its own file (`omega/devices/<id>/events/<event-id>.json`); legacy `events.jsonl` files are still read and deduplicated by `id`.
 - On Android the vault is selected with the system folder picker (SAF) and the read/write permission is kept across restarts. Daily backups live in `longlife/<device>/<date>`; the legacy `Longlife` folder is migrated when the vault is opened (desktop) and keeps being read as legacy until the user renames it via SAF.
-- The app creates one copy of `omega` per day in `<vault>/longlife/<device>/<YYYY-MM-DD>` and keeps the 7 most recent copies **per device**, without touching other devices' copies. Legacy copies in `<vault>/longlife/<YYYY-MM-DD>` are still listed.
+- The app creates one copy of `omega` per day in `<vault>/longlife/<device>/<YYYY-MM-DD>` and keeps the 7 most recent copies **in total, across all devices**; older ones are overwritten. Legacy copies in `<vault>/longlife/<YYYY-MM-DD>` are still listed.
 - **Settings → Backups** lets you create a copy, see each copy's date, device, and size, and **restore** it safely: only events missing from `omega` are imported into `omega/devices/restored-<copy>-<stamp>/`, without deleting or overwriting anything. Each copy stores a manifest with file count and bytes: if a sync leaves it half-copied, it shows as **damaged** and today's copy is rebuilt automatically.
 - Settings includes a high-risk action to delete every `longlife` backup. It asks for confirmation, cannot be undone, and the daily backup is not recreated until the next day.
-- If the event count drops below the last count seen for that vault, the app warns: an append-only vault should never shrink (this usually means FolderSync or another machine reverted files). If you sync with FolderSync, use incremental copy mode from the phone to the PC (do not propagate deletions) and never sync an old PC copy back over the phone.
+- If the event count drops below the last count seen for that vault, the app warns: an append-only vault should never shrink (this usually means an external sync tool or another machine reverted files). If you sync with a third-party tool, use incremental copy mode from the phone to the PC (do not propagate deletions) and never sync an old PC copy back over the phone.
 - Barcodes are entered by hand in Intake: type or paste 6–14 digits and press "Search" (or use a USB/Bluetooth scanner that ends with Enter). UPC-A/EAN-13/GTIN codes are tried in their zero-padded and unpadded forms (12/13/14 digits), both in the app and against Open Food Facts. The app does not request camera permission and does not read images.
 - **There is no encryption:** the vault is stored as plain JSON under `<vault>/omega`, and backups under `<vault>/longlife`. Do not sync it to a cloud service or share the machine without encrypting it yourself. Photos and files are not stored; pasted content is limited to plain text.
 - The only network connections are the **manual** update check and the optional Open Food Facts barcode lookup when searching a code. The searched barcode is sent to `world.openfoodfacts.org`; nothing is sent in the background. Microsoft Store builds do not include the in-app updater and update through the Store.

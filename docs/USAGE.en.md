@@ -10,13 +10,15 @@ The app installs in **English** by default; you can switch to Spanish from **Set
 
 The **Settings** dialog uses horizontal tabs; the last tab you used is remembered on the next launch. You can switch tabs with the mouse or with the left/right arrow keys.
 
-- **Appearance**: light/dark theme, accent color and language; also the installed format and a reminder of where to enter barcodes.
-- **Vault**: vault path, app data, device, privacy/network notice, browser-mode notice and sample data (browser only).
+- **Appearance**: light/dark theme, accent color, **text size** (100/110/120/130/150%) and language; also the installed format and a reminder of where to enter barcodes.
+- **Vault**: vault path, app data, device, **your name** (header greeting), privacy/network notice, browser-mode notice and sample data (browser only).
 - **Backups**: status and size of `longlife` copies, create today's copy, non-destructive restore of missing events and deletion of copies (irreversible).
 - **Updates**: manual check and optional install.
 - **About**: version, commit, build date, vault schema, event count and links to the repository and privacy policy.
 
 The dialog footer lets you change the vault.
+
+The first time you select a vault, an optional **Your name** field is offered. If filled in, it is saved as a `profile.saved` event in that vault and the header shows «Hi, *name*»; if left empty, the header keeps the «Local data · no accounts · no telemetry» notice. The name can also be entered or changed later in **Settings → Vault → Your name**.
 
 ## Exercise library — descriptions
 
@@ -86,13 +88,13 @@ The projection is a daily physiological integrator of two compartments (Hall/For
 
 ## Body figure — Silhouette
 
-Body figure is organised into tabs: **Data & measurements** (form and quick weight log), **Composition** (indicators, silhouette and equation consensus) and **Projection** (trend and simulation).
+Body figure is organised into tabs: **Measurements** (form and quick weight log), **Composition** (indicators, silhouette and equation consensus) and **Projection** (trend and simulation).
 
 **Nutrition** has three tabs: **Intake** (macros, FoodLog and the automatic logging switch), **Water** (counter, target and limits) and **Recipes** (50 dishes, a “Rotate recipes” button for another three, and allergen labels). All recipes are gluten- and nut-free; dairy, egg, soy, fish, shellfish or sesame are labelled as allergens. The Summary and Reminders tabs are gone: reminders now live in Habits.
 
 Measurement form: weight, height, age, sex, neck, chest, waist, abdomen, hip, bicep/forearm, thigh, calf and wrist. Fields behave as missing data rather than zero.
 
-The adaptive silhouette **follows the sex already selected in the measurement form** (there is no second switch): its shape and the draggable node ranges change accordingly. Drag nodes outwards to increase a circumference; if sex is unspecified, the silhouette uses neutral ranges and says so.
+The adaptive silhouette **follows the sex already selected in the measurement form** (there is no second switch) and adjusts its shape to the recorded circumferences. It is illustrative only: it has no draggable nodes; measurements are entered in centimetres in the form. If sex is unspecified, it uses neutral ranges and says so.
 
 ## Updates
 

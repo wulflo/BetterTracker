@@ -65,6 +65,10 @@ export default function FoodLog({ foods, items, onAdd, onUpdate, onRemove, onCle
   const [remoteBusy, setRemoteBusy] = useState(false);
   const [remoteError, setRemoteError] = useState('');
   const remoteRequest = useRef(0);
+  // Tras añadir un alimento remoto se rellena el campo con su nombre; sin este
+  // guard se lanzaría otra búsqueda y aparecería un 503 aunque el alta ya se
+  // guardó correctamente en la bóveda.
+  const suppressRemoteRef = useRef<string | null>(null);
   const [lookupFood, setLookupFood] = useState<Food | null>(null);
   const [checksumHold, setChecksumHold] = useState<string | null>(null);
   const [custom, setCustom] = useState({
@@ -153,17 +157,27 @@ export default function FoodLog({ foods, items, onAdd, onUpdate, onRemove, onCle
     setSelectedId(food.id);
     setUnit(nextUnit);
     setQuantity(qty);
+    suppressRemoteRef.current = food.name;
     setQuery(food.name);
   };
 
   const addRemoteFood = async (food: Food) => {
+    // Registrar la comida es lo importante y no debe depender de que se pueda
+    // guardar el alimento en la bóveda (en Android ese write puede fallar o
+    // colgarse por SAF). Primero se añade al registro; el alta en la bóveda se
+    // hace después y su fallo no pierde la comida.
+    addFromSearch(food);
     try {
-      // Se guarda en la bóveda como alimento personalizado: sus macros quedan
-      // disponibles sin red y se reutilizan en búsquedas futuras.
+      // Sus macros quedan disponibles sin red en búsquedas futuras.
       await onCreateFood(food);
-      addFromSearch(food);
     } catch (e) {
-      setRemoteError(errorText(e));
+      setRemoteError(
+        tx(
+          lang,
+          `Comida registrada, pero no se pudo guardar el alimento en la bóveda: ${errorText(e)}`,
+          `Meal logged, but the food could not be saved to the vault: ${errorText(e)}`,
+        ),
+      );
     }
   };
 
@@ -173,6 +187,17 @@ export default function FoodLog({ foods, items, onAdd, onUpdate, onRemove, onCle
   // si no, se buscan alimentos en local y, con debounce, en la nube.
   useEffect(() => {
     const value = query.trim();
+    if (suppressRemoteRef.current !== null) {
+      const suppressed = suppressRemoteRef.current;
+      suppressRemoteRef.current = null;
+      if (suppressed === value) {
+        ++remoteRequest.current;
+        setRemoteResults([]);
+        setRemoteError('');
+        setRemoteBusy(false);
+        return;
+      }
+    }
     const request = ++remoteRequest.current;
     setRemoteError('');
     if (isBarcodeQuery(value) || value.length < 2 || barcodeBusy || checksumHold) {
@@ -199,14 +224,14 @@ export default function FoodLog({ foods, items, onAdd, onUpdate, onRemove, onCle
         .then((foods) => {
           if (request === remoteRequest.current) setRemoteResults(foods);
         })
-        .catch(() => {
+        .catch((error: unknown) => {
           if (request === remoteRequest.current) {
             setRemoteResults([]);
             setRemoteError(
               tx(
                 lang,
-                'Open Food Facts no está disponible ahora. Se muestran solo los resultados locales.',
-                'Open Food Facts is unavailable right now. Showing local results only.',
+                `Open Food Facts no está disponible ahora (${errorText(error)}). Se muestran solo los resultados locales.`,
+                `Open Food Facts is unavailable right now (${errorText(error)}). Showing local results only.`,
               ),
             );
           }
@@ -249,6 +274,10 @@ export default function FoodLog({ foods, items, onAdd, onUpdate, onRemove, onCle
     }
 
     setBarcodeBusy(true);
+    let finished = false;
+    const watchdog = window.setTimeout(() => {
+      if (!finished) setBarcodeBusy(false);
+    }, 20_000);
     setBarcodeNotice(
       tx(lang, `Buscando el código ${code} en el catálogo local…`, `Looking up code ${code} in the local catalog…`),
     );
@@ -258,8 +287,10 @@ export default function FoodLog({ foods, items, onAdd, onUpdate, onRemove, onCle
       const catalogFood = await lookupBarcodeCatalog(code);
       if (catalogFood) {
         setLookupFood(catalogFood);
-        await onCreateFood(catalogFood);
         chooseFood(catalogFood);
+        void onCreateFood(catalogFood).catch((e) =>
+          setBarcodeNotice(tx(lang, `Producto seleccionado, pero no se pudo guardar en la bóveda: ${errorText(e)}`, `Product selected, but it could not be saved to the vault: ${errorText(e)}`)),
+        );
         setBarcodeNotice(
           tx(
             lang,
@@ -277,10 +308,12 @@ export default function FoodLog({ foods, items, onAdd, onUpdate, onRemove, onCle
       const product = await lookupBarcode(code);
       if (product) {
         setLookupFood(product);
-        await onCreateFood(product);
         chooseFood(product);
+        void onCreateFood(product).catch((e) =>
+          setBarcodeNotice(tx(lang, `Producto seleccionado, pero no se pudo guardar en la bóveda: ${errorText(e)}`, `Product selected, but it could not be saved to the vault: ${errorText(e)}`)),
+        );
         setBarcodeNotice(
-          tx(lang, `Producto encontrado y guardado en tu base: ${product.name}.`, `Product found and saved to your database: ${product.name}.`),
+          tx(lang, `Producto encontrado: ${product.name}.`, `Product found: ${product.name}.`),
         );
       } else {
         setCustom((value) => ({ ...value, barcode: code }));
@@ -304,6 +337,8 @@ export default function FoodLog({ foods, items, onAdd, onUpdate, onRemove, onCle
         ),
       );
     } finally {
+      finished = true;
+      window.clearTimeout(watchdog);
       setBarcodeBusy(false);
     }
   };
@@ -474,7 +509,7 @@ export default function FoodLog({ foods, items, onAdd, onUpdate, onRemove, onCle
                   <button type="button" className="food-result" onClick={() => chooseFood(food)}>
                     <span>
                       <strong>{displayName(food)}</strong>
-                      <span className="small muted"> · {categoryLabel(food.category, lang)}</span>
+                      <span className="food-category muted">{categoryLabel(food.category, lang)}</span>
                       <span className="badge badge-muted">{tx(lang, 'Local', 'Local')}</span>
                       {food.source === 'estimate' && (
                         <span className="badge badge-warning">{tx(lang, 'Estimación', 'Estimate')}</span>
@@ -494,7 +529,7 @@ export default function FoodLog({ foods, items, onAdd, onUpdate, onRemove, onCle
                     <button type="button" className="food-result" onClick={() => chooseFood(food)}>
                       <span>
                         <strong>{displayName(food)}</strong>
-                        <span className="small muted"> · {categoryLabel(food.category, lang)}</span>
+                        <span className="food-category muted">{categoryLabel(food.category, lang)}</span>
                         <span className="badge badge-primary">{tx(lang, 'Open Food Facts', 'Open Food Facts')}</span>
                       </span>
                       <span className="mono small">{food.per100.kcal} kcal/100 g</span>
