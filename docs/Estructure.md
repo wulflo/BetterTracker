@@ -2,8 +2,8 @@
 
 > **Índice técnico detallado de Better Tracker (Better Fitness Tracker).**
 >
-> Versión del código indexada: **0.10.4** (`VERSION`, `package.json`, `src-tauri/tauri.conf.json`, `VAULT_SCHEMA_VERSION = 1`).
-> Fecha del índice: **2026-11-25**.
+> Versión del código indexada: **0.10.5** (`VERSION`, `package.json`, `src-tauri/tauri.conf.json`, `VAULT_SCHEMA_VERSION = 1`).
+> Fecha del índice: **2026-11-27**.
 >
 > Este documento **no modifica ni describe cambios en el código**: es solo un mapa de referencia.
 > Responde a la pregunta _«¿dónde está la pieza que hace que funcione cada cosa?»_.
@@ -18,7 +18,7 @@
 
 | Notación | Significado |
 | :--- | :--- |
-| `ruta/archivo.tsx:123` | Archivo y línea aproximada donde empieza el símbolo. Las líneas son las de la versión 0.10.4 y pueden moverse con edits posteriores; el **nombre del símbolo** es el dato estable. |
+| `ruta/archivo.tsx:123` | Archivo y línea aproximada donde empieza el símbolo. Las líneas son las de la versión 0.10.5 y pueden moverse con edits posteriores; el **nombre del símbolo** es el dato estable. |
 | `símbolo()` | Función, componente o método exportado. |
 | `#[tauri::command]` | Función Rust expuesta al frontend mediante `invoke("nombre")`. |
 | `LNNN` | Número de línea dentro del archivo que se está describiendo. |
@@ -285,7 +285,7 @@ El progreso llega como evento `update-progress`; la ruta del instalador queda gu
 | Iconos | `scripts/generate-icons.mjs`, `src-tauri/icons/app-icon.png` |
 | Datos | `scripts/generate-barcode-catalog.mjs` |
 | Pruebas visuales | `playwright.config.ts`, `tests/visual/smoke.spec.ts` |
-| Asistentes de código | `.agents/skills/` (6 skills, incl. `vault-performance-guard`) y `.agents/commands/estructure-sync.md`. Antes se llamaban `.opencode/`. |
+| Asistentes de código | `.agents/skills/` (13 skills, incl. `actualizador-seguro` y `vault-performance-guard`) y `.agents/commands/estructure-sync.md`. Antes se llamaban `.opencode/`. |
 
 ---
 
@@ -611,7 +611,7 @@ mediana por familia, factor Huber y produce `avg`/`min`/`max`, `fatMass`, `leanM
 
 ### 10.2 Versión y firma
 
-- `VERSION = 0.10.4`, `VAULT_SCHEMA_VERSION = 1`; `scripts/sync-version.mjs` propaga la
+- `VERSION = 0.10.5`, `VAULT_SCHEMA_VERSION = 1`; `scripts/sync-version.mjs` propaga la
   versión a `package.json`, `tauri.conf.json`, `Cargo.toml`, `Cargo.lock`,
   `package-lock.json`, `snapcraft.yaml`, metainfo Flatpak y `tauri.properties` Android
   (`versionCode = major·1.000.000 + minor·1.000 + patch`).
@@ -621,7 +621,9 @@ mediana por familia, factor Huber y produce `avg`/`min`/`max`, `fatMass`, `leanM
 - `scripts/generate-updater-manifest.mjs` genera `latest.json` con 5 claves obligatorias:
   `linux-x86_64`, `linux-deb-x86_64`, `linux-rpm-x86_64`, `windows-x86_64`, `android-aarch64`.
   `generate-release-manifest.mjs` genera el catálogo de auditoría validado contra
-  `schemas/release-manifest.schema.json`.
+  `schemas/release-manifest.schema.json`. `check-updater-compat.mjs` comprueba
+  además que ninguna entrada tenga `signature` vacía (compatibilidad con clientes
+  Android antiguos); el workflow lo ejecuta antes de publicar.
 
 ### 10.3 Empaquetado por plataforma
 

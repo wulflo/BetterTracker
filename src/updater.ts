@@ -83,7 +83,8 @@ interface ManifestAsset {
   url?: string;
   size?: number;
   sha256?: string;
-  signature?: string;
+  /** La release publica `""` en Android: el plugin de escritorio exige el campo. */
+  signature?: string | null;
 }
 
 interface UpdateManifest {
@@ -288,7 +289,7 @@ async function fetchManifest(lang: Lang = 'es'): Promise<UpdateManifest> {
   return manifest;
 }
 
-function validateAsset(
+export function validateAsset(
   rawAsset: ManifestAsset | undefined,
   label: string,
   lang: Lang = 'es',
@@ -325,24 +326,37 @@ function validateAsset(
       ),
     );
   }
-  if (
-    rawAsset.signature !== undefined &&
-    (typeof rawAsset.signature !== 'string' ||
-      !/^[A-Za-z0-9+/=\s]+$/.test(rawAsset.signature))
-  ) {
-    throw new Error(
-      tx(
-        lang,
-        `El manifiesto incluye una firma no válida para ${label}.`,
-        `The manifest includes an invalid signature for ${label}.`,
-      ),
-    );
+  // La APK no usa minisign: `generate-updater-manifest.mjs` publica una firma
+  // vacía porque el updater de escritorio deserializa todas las entradas con ese
+  // campo. Un string vacío (o null) significa «sin firma», no una firma inválida.
+  let signature: string | undefined;
+  if (rawAsset.signature !== undefined && rawAsset.signature !== null) {
+    if (typeof rawAsset.signature !== 'string') {
+      throw new Error(
+        tx(
+          lang,
+          `El manifiesto incluye una firma no válida para ${label}.`,
+          `The manifest includes an invalid signature for ${label}.`,
+        ),
+      );
+    }
+    const trimmed = rawAsset.signature.trim();
+    if (trimmed && !/^[A-Za-z0-9+/=\s]+$/.test(trimmed)) {
+      throw new Error(
+        tx(
+          lang,
+          `El manifiesto incluye una firma no válida para ${label}.`,
+          `The manifest includes an invalid signature for ${label}.`,
+        ),
+      );
+    }
+    signature = trimmed || undefined;
   }
   return {
     url: rawAsset.url,
     size: typeof rawAsset.size === 'number' && rawAsset.size > 0 ? rawAsset.size : undefined,
     sha256: rawAsset.sha256.toLowerCase(),
-    signature: rawAsset.signature?.trim() || undefined,
+    signature,
   };
 }
 

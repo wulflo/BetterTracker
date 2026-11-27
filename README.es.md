@@ -5,7 +5,7 @@
   Todo lo que registras se queda en una carpeta que tú eliges. Sin cuentas, sin nube y sin telemetría.</p>
 
   <p>
-    <a href="VERSION"><img src="https://img.shields.io/badge/versi%C3%B3n-0.10.4-4f7cff?style=flat-square" alt="Versión 0.10.4"></a>
+    <a href="VERSION"><img src="https://img.shields.io/badge/versi%C3%B3n-0.10.5-4f7cff?style=flat-square" alt="Versión 0.10.5"></a>
     <a href="https://github.com/wulflo/BetterTracker/actions/workflows/ci.yml"><img src="https://github.com/wulflo/BetterTracker/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/licencia-MIT-2ea44f?style=flat-square" alt="Licencia MIT"></a>
     <img src="https://img.shields.io/badge/plataformas-Linux%20%7C%20Windows%20%7C%20Android-6b7280?style=flat-square" alt="Plataformas">
@@ -22,7 +22,7 @@
     <a href="README.md">English</a>
   </p>
 
-  <p>Versión actual: <strong>0.10.4</strong></p>
+  <p>Versión actual: <strong>0.10.5</strong></p>
 </div>
 
 <img src="docs/screenshots/dashboard.es.png" alt="Alimentación de Better Fitness Tracker con ingesta, macros y agua">

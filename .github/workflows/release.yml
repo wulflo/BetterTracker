@@ -482,6 +482,7 @@ jobs:
           VER="${{ needs.version.outputs.version }}"
           node scripts/generate-updater-manifest.mjs assets latest.json "$TAG" "$VER" "${{ github.repository }}" --require-all
           node scripts/validate-manifest.mjs latest.json
+          node scripts/check-updater-compat.mjs latest.json
       - name: Generate release manifest
         run: |
           node scripts/generate-release-manifest.mjs assets release-manifest.json

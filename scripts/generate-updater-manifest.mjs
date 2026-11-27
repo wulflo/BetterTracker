@@ -151,9 +151,12 @@ if (apks.length) {
   const sha256 = createHash('sha256').update(bytes).digest('hex');
   platforms['android-aarch64'] = {
     // El updater de escritorio deserializa todas las entradas con un campo
-    // `signature` obligatorio, aunque no use la de Android. La APK no usa
-    // minisign: el cliente Android verifica el SHA-256 de aquí abajo.
-    signature: '',
+    // `signature` obligatorio, aunque no use la de Android. Publicamos el
+    // SHA-256 como marcador no vacío (es base64 válido) para que los clientes
+    // Android antiguos, que validan ese campo antes de descargar, puedan
+    // actualizar. La APK no usa minisign: se autentica con este SHA-256 y con
+    // la firma del sistema al instalar.
+    signature: sha256,
     url: assetUrl(apk),
     size: statSync(apk).size,
     sha256,

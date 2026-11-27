@@ -76,7 +76,7 @@ El pegado y el arrastre se interceptan globalmente. Solo se acepta `text/plain`;
 - Manifiesto estático `latest.json` en el release de GitHub, con una entrada por plataforma/arquitectura:
   - `linux-x86_64` → AppImage + `.AppImage.sig`.
   - `windows-x86_64` → instalador NSIS `.exe` + `.exe.sig` (MSI como alternativa).
-  - `android-aarch64` → APK, tamaño y SHA-256.
+  - `android-aarch64` → APK, tamaño y SHA-256. El campo `signature` no es minisign: el updater de escritorio exige que exista y los clientes Android hasta 0.10.4 validaban que no estuviera vacío, así que desde 0.10.5 se publica el propio SHA-256 como marcador no vacío. El cliente nuevo (`validateAsset` en `src/updater.ts`) acepta además la firma vacía o nula de los manifests antiguos. La APK se autentica con el SHA-256 publicado y con la firma del sistema al instalar; exigir base64 a un string vacío causaba el error «El manifiesto incluye una firma no válida para una APK de Android».
 - El plugin de escritorio verifica la firma minisign antes de instalar. Si el manifiesto o la firma no son válidos, se muestra un error y no se instala nada.
 - Linux solo puede actualizarse solo con AppImage; `.deb` y `.rpm` se actualizan manualmente desde el release. La interfaz detecta el formato y desactiva el botón cuando no corresponde.
 - Windows prefiere NSIS sobre MSI para evitar permisos de administrador.
@@ -91,7 +91,7 @@ El pegado y el arrastre se interceptan globalmente. Solo se acepta `text/plain`;
 ## Versión y release
 `VERSION` es la fuente única y el tag es exactamente `v<VERSION>`. El workflow ya no calcula el patch con el número de commits. `scripts/sync-version.mjs` sincroniza `package.json`, `package-lock.json`, `tauri.conf.json`, `Cargo.toml` y `Cargo.lock`, y CI falla si hay desincronización.
 
-El workflow compila Linux, Windows y Android, sube los instaladores, la APK y los artefactos del updater, genera `latest.json` (incluida la entrada `android-aarch64`), `release-manifest.json` y `SHA256SUMS.txt`, y publica el release solo cuando todos los builds y las verificaciones terminan bien.
+El workflow compila Linux, Windows y Android, sube los instaladores, la APK y los artefactos del updater, genera `latest.json` (incluida la entrada `android-aarch64`), `release-manifest.json` y `SHA256SUMS.txt`, y publica el release solo cuando todos los builds y las verificaciones terminan bien. Tras generar `latest.json` ejecuta `scripts/check-updater-compat.mjs`: cualquier `signature` vacía o no base64, plataforma ausente o URL ajena a las releases oficiales falla la publicación. La skill `.agents/skills/actualizador-seguro/` revisa esta compatibilidad antes de tocar el updater o publicar.
 
 ## UI
 Cuatro secciones: Panel, Entrenamiento, Historial y Figura corporal. Entrenamiento incluye biblioteca, rutinas, plan, sesión, calendario y progreso. Los mesociclos y recordatorios están integrados en el plan y el panel. El logo se muestra tal cual, sin contenedor circular ni recorte adicional; su propia forma redondeada define el borde.

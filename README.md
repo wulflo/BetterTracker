@@ -5,7 +5,7 @@
   Everything you log stays in a folder you choose. No accounts, no cloud, no telemetry.</p>
 
   <p>
-    <a href="VERSION"><img src="https://img.shields.io/badge/version-0.10.4-4f7cff?style=flat-square" alt="Version 0.10.4"></a>
+    <a href="VERSION"><img src="https://img.shields.io/badge/version-0.10.5-4f7cff?style=flat-square" alt="Version 0.10.5"></a>
     <a href="https://github.com/wulflo/BetterTracker/actions/workflows/ci.yml"><img src="https://github.com/wulflo/BetterTracker/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2ea44f?style=flat-square" alt="MIT license"></a>
     <img src="https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20Android-6b7280?style=flat-square" alt="Platforms">
@@ -22,7 +22,7 @@
     <a href="README.es.md">Español</a>
   </p>
 
-  <p>Current version: <strong>0.10.4</strong></p>
+  <p>Current version: <strong>0.10.5</strong></p>
 </div>
 
 <img src="docs/screenshots/dashboard.en.png" alt="Better Tracker Nutrition view with food search, macros, water and recipes">

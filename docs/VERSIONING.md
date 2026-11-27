@@ -46,6 +46,7 @@ git diff -- package.json package-lock.json src-tauri/tauri.conf.json \
    - verifica los instaladores y las firmas;
    - sube los assets;
    - genera `latest.json`, `release-manifest.json` y `SHA256SUMS.txt`;
+   - comprueba la compatibilidad del updater con clientes antiguos;
    - publica el release.
 
 El workflow solo se dispara con tags `v*` o con `workflow_dispatch` (indicando un tag existente). Un push normal a `main` no publica nada. Si el tag empujado o solicitado no coincide con `VERSION`, el workflow falla antes de compilar.
@@ -67,7 +68,7 @@ Es el manifiesto que lee el plugin updater. Se genera con `scripts/generate-upda
 
 ```json
 {
-  "version": "0.10.4",
+  "version": "0.10.5",
   "notes": "Notas del release",
   "pub_date": "2026-11-25T00:00:00.000Z",
   "platforms": {
@@ -82,6 +83,11 @@ El endpoint configurado es:
 ```text
 https://github.com/wulflo/BetterTracker/releases/latest/download/latest.json
 ```
+
+La entrada `android-aarch64` lleva `signature` con el SHA-256 de la APK: no es minisign,
+pero debe ser un string no vacío y base64 para que los clientes Android hasta 0.10.4
+sigan aceptando el manifiesto; el cliente actual trata la firma vacía o nula de manifests
+antiguos como «sin firma». `scripts/check-updater-compat.mjs` verifica esta compatibilidad.
 
 El workflow usa `--require-all` y exige cinco claves antes de publicar: `linux-x86_64`,
 `linux-deb-x86_64`, `linux-rpm-x86_64`, `windows-x86_64` y `android-aarch64`. Si falta un

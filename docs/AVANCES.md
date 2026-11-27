@@ -1,5 +1,10 @@
 # Avances recientes
 
+## 0.10.5 (2026-11-27)
+- Corregido el error «El manifiesto incluye una firma no válida para una APK de Android» al buscar actualizaciones desde 0.10.2: el generador publica un `signature` no vacío y el cliente acepta el de los manifests antiguos.
+- Nueva guardia de CI (`scripts/check-updater-compat.mjs`) y skill `actualizador-seguro` para que un cambio no vuelva a romper la compatibilidad con clientes ya instalados.
+- Sin cambios de bóveda ni de claves: 0.10.2 → 0.10.5 directo. Detalles en `docs/releases/v0.10.5.md`.
+
 ## 0.10.4 (2026-11-26)
 - Interfaz sin blur: cero `box-shadow`, bordes de cajas derivados del acento y foco con `outline`.
 - Ajustes con 5 pestañas horizontales (mosaico 3+2 en vertical) y tamaño de modal fijo; la cinta no se comprime con 10+ snapshots.
